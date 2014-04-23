@@ -20,6 +20,14 @@ void server_dynamic(int fd, char* cause, char* errnum,
 void clienterror(int fd, char* cause, char* errnum, 
 		char* shortmsg, char* longmsg);
 void serve_dynamic(int fd, char* filename, char* cgiargs);
+void get_server_name_and_content(char* fileName, char* serverName, char* content);
+
+
+
+
+
+
+
 int main(int argc, char** argv)
 {
 	int listenfd, connfd, port, clientlen;
@@ -131,7 +139,7 @@ int find_slash(char* fileName){
 }
 
 void get_server_name_and_content(char* fileName, char* serverName, char* content){
-	int slash_index = find_slash(fileName)
+	int slash_index = find_slash(fileName);
 	if(slash_index < 0){
 		raise_error("bad url from get server name");
 	}
