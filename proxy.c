@@ -73,6 +73,19 @@ void sendit(int fd, char* host, char* message){
 	printf("send message success\n");
 }
 
+char* get_rid_of_http(char* hostname){
+	char* head = "http://";
+	if(strlen(hostname) >= 7){
+		for(int i = 0; i < 7; ++i){
+			if(hostname[i] != head[i]){
+				return hostname;
+			}
+		}
+		return hostname + 7;
+	}
+	return hostname;
+}
+
 void send_request_to_server(char* server, char* message, int port){
 	rio_t rio;
 	int fd = Open_clientfd(server, port);
@@ -112,7 +125,9 @@ void doit(int fd){
 	char serverName[100];
 	char content [100];
 	get_server_name_and_content(filename, serverName, content);
-	send_request_to_server(serverName, content, 80);
+	char* newServerName = get_rid_of_http(serverName);
+	printf("new server:%s\n", newServerName);
+	send_request_to_server(newServerName, content, 80);
 	if(stat(filename, &sbuf) < 0){
 		clienterror(fd, filename, "404", "Not found",
 			"Tiny couldn't find this file");
