@@ -52,33 +52,13 @@ int main(int argc, char** argv)
 }
 char request[MAXLINE];
 
-void sendit(int fd, char* host, char* message){
-	char* host_hdr = "Host: ";
+void sendit(int fd, char* host, char* hdr, char* message){
 	char* end  = "\r\n";
 	char buffer[MAXLINE];
 	sprintf(buffer, "GET /%s HTTP/1.0\r\n", message);
 	printf("request: %s", buffer);
 	Rio_writen(fd, buffer, strlen(buffer));
-
-	Rio_writen(fd, host_hdr, strlen(host_hdr));
-	printf("%s", host_hdr);
-	Rio_writen(fd, host, strlen(host));
-	printf("%s", host);
-	Rio_writen(fd, end, strlen(end));
-	printf("%s", end);
-
-	Rio_writen(fd, user_agent_hdr, strlen(user_agent_hdr));
-	printf("%s", user_agent_hdr);
-	Rio_writen(fd, accept_hdr, strlen(accept_hdr));
-	printf("%s", accept_hdr);
-	Rio_writen(fd, accept_encoding_hdr, strlen(accept_encoding_hdr));
-	printf("%s", accept_encoding_hdr);
-	Rio_writen(fd, connection_hdr, strlen(connection_hdr));
-	printf("%s", connection_hdr);
-	Rio_writen(fd, proxy_connection_hdr, strlen(proxy_connection_hdr));
-	printf("%s", proxy_connection_hdr);
-	Rio_writen(fd, end, strlen(end));
-	printf("%s", end);
+	Rio_writen(fd, hdr, strlen(hdr));
 	Rio_writen(fd, end, strlen(end));
 	printf("send message success\n");
 }
@@ -96,7 +76,8 @@ char* get_rid_of_http(char* hostname){
 	return hostname;
 }
 
-void send_request_to_server(int client_fd, char* server, char* message, int port){
+
+void send_request_to_server(int client_fd, char* server, char* hdr, char* message, int port){
 	rio_t rio;
 	int fd = Open_clientfd(server, port);
 	Rio_readinitb(&rio, fd);
@@ -106,19 +87,19 @@ void send_request_to_server(int client_fd, char* server, char* message, int port
 	}else{
 		printf("connect to server succeed\n");
 	}
-	sendit(fd, server, message);
+	sendit(fd, server, hdr, message);
 	char buffer[MAXLINE];
 	while(Rio_readlineb(&rio, buffer, MAXLINE) != 0){
 		Rio_writen(client_fd, buffer, strlen(buffer));
-		printf("%s", buffer);
 	}
 	Close(fd);
 
 }
 
+
 void doit(int fd){
 	int is_static;
-	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
+	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE], revised_hdr[MAXLINE];
 	char filename[MAXLINE], cgiargs[MAXLINE];
 	rio_t rio;
 
@@ -130,14 +111,55 @@ void doit(int fd){
 			"Tiny does not implement this method");
 		return;
 	}
-	read_requesthdrs(&rio);
+
 	is_static = parse_uri(uri, filename, cgiargs);
 	char serverName[100];
 	char content [100];
 	get_server_name_and_content(filename, serverName, content);
 	char* newServerName = get_rid_of_http(serverName);
 	printf("new server:%s\n", newServerName);
-	send_request_to_server(fd, newServerName, content, 80);
+
+	//collect
+	//read init bytes
+	memset(revised_hdr, 0, sizeof(revised_hdr));
+	int has_agent = 0, has_accept = 0, has_encoding = 0, has_connection = 0, has_proxy = 0, has_host = 0;
+	do{
+		Rio_readlineb(&rio, buf, MAXLINE);
+		if(! has_agent && strstr(buf, "User-Agent") == NULL){
+			strcat(revised_hdr, user_agent_hdr);
+			has_agent = 1;
+		}else
+		if(!has_encoding && strstr(buf, "Accept-Encoding") == NULL){
+			strcat(revised_hdr, accept_hdr);
+			has_encoding = 1;
+		}else
+		if(!has_accept && strstr(buf, "Accept") == NULL){
+			strcat(revised_hdr, accept_encoding_hdr);
+			has_accept = 1;
+		}else
+		if(!has_connection && strstr(buf, "Connection") == NULL){
+			strcat(revised_hdr, connection_hdr);
+			has_connection = 1;
+		}else
+		if(!has_proxy && strstr(buf, "Proxy-Connection") == NULL){
+			strcat(revised_hdr, proxy_connection_hdr);
+			has_proxy = 1;
+		}else
+		if(!has_host && strstr(buf, "HOST") == NULL){
+			strcat(revised_hdr, "HOST: ");
+			strcat(revised_hdr, newServerName);
+			strcat(revised_hdr, "\r\n");
+			has_host = 1;
+		}
+		else{
+			strcat(revised_hdr, buf);
+		}
+	}while(strcmp(buf, "\r\n"));
+	printf("-----------------start-----------------\n");
+	printf("%s", revised_hdr);
+	printf("------------------end----------------\n");
+
+	send_request_to_server(fd, newServerName, revised_hdr, content, 80);
 }
 
 int find_slash(char* fileName){
@@ -165,6 +187,7 @@ void get_server_name_and_content(char* fileName, char* serverName, char* content
 	printf("server name = %s\n", serverName);
 	printf("content = %s\n", content);
 }
+
 
 void read_requesthdrs(rio_t *rp){
 	char buf[MAXLINE];
