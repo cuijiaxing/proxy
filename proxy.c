@@ -53,9 +53,9 @@ int main(int argc, char** argv)
 char request[MAXLINE];
 
 void sendit(int fd, char* host, char* message){
-	//char* host_hdr = "Host: ";
+	char* host_hdr = "Host: ";
 	char* end  = "\r\n";
-	//Rio_writen(fd, host_hdr, sizeof(host_hdr));
+	//Rio_writen(fd, host_hdr, strlen(host_hdr));
 	//Rio_writen(fd, host, sizeof(host));
 	//Rio_writen(fd, end, sizeof(end));
 
@@ -86,7 +86,7 @@ char* get_rid_of_http(char* hostname){
 	return hostname;
 }
 
-void send_request_to_server(char* server, char* message, int port){
+void send_request_to_server(int client_fd, char* server, char* message, int port){
 	rio_t rio;
 	int fd = Open_clientfd(server, port);
 	Rio_readinitb(&rio, fd);
@@ -99,6 +99,7 @@ void send_request_to_server(char* server, char* message, int port){
 	sendit(fd, server, message);
 	char buffer[MAXLINE];
 	while(Rio_readlineb(&rio, buffer, MAXLINE) != 0){
+		Rio_writen(client_fd, buffer, strlen(buffer));
 		printf("%s", buffer);
 	}
 	Close(fd);
@@ -107,7 +108,6 @@ void send_request_to_server(char* server, char* message, int port){
 
 void doit(int fd){
 	int is_static;
-	struct stat sbuf;
 	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
 	char filename[MAXLINE], cgiargs[MAXLINE];
 	rio_t rio;
@@ -127,28 +127,7 @@ void doit(int fd){
 	get_server_name_and_content(filename, serverName, content);
 	char* newServerName = get_rid_of_http(serverName);
 	printf("new server:%s\n", newServerName);
-	send_request_to_server(newServerName, content, 80);
-	if(stat(filename, &sbuf) < 0){
-		clienterror(fd, filename, "404", "Not found",
-			"Tiny couldn't find this file");
-		return ;
-	}
-
-	if(is_static){
-		if(!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)){
-			clienterror(fd, filename, "403", "Forbidden", 
-				"Tiny couldn't read the file");
-			return ;
-		}
-		serve_static(fd, filename, sbuf.st_size);
-	}else{
-		if(!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)){
-			clienterror(fd, filename, "403", "Forbidden", 
-					"Tiny couldn't run the CGI program");
-			return;
-		}
-		serve_dynamic(fd, filename, cgiargs);
-	}
+	send_request_to_server(fd, newServerName, content, 80);
 }
 
 int find_slash(char* fileName){
