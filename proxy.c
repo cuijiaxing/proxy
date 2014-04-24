@@ -55,21 +55,31 @@ char request[MAXLINE];
 void sendit(int fd, char* host, char* message){
 	char* host_hdr = "Host: ";
 	char* end  = "\r\n";
-	//Rio_writen(fd, host_hdr, strlen(host_hdr));
-	//Rio_writen(fd, host, sizeof(host));
-	//Rio_writen(fd, end, sizeof(end));
-
-	//Rio_writen(fd, user_agent_hdr, sizeof(user_agent_hdr));
-	//Rio_writen(fd, accept_hdr, sizeof(accept_hdr));
-	//Rio_writen(fd, accept_encoding_hdr, sizeof(accept_encoding_hdr));
-	//Rio_writen(fd, connection_hdr, sizeof(connection_hdr));
-	//Rio_writen(fd, proxy_connection_hdr, sizeof(proxy_connection_hdr));
 	char buffer[MAXLINE];
-	sprintf(buffer, "GET /%s HTTP/1.0\r\n\r\n", message);
-	printf("request: %s\n", buffer);
-	Rio_writen(fd, buffer, sizeof(buffer));
-	Rio_writen(fd, end, sizeof(end));
-	Rio_writen(fd, end, sizeof(end));
+	sprintf(buffer, "GET /%s HTTP/1.0\r\n", message);
+	printf("request: %s", buffer);
+	Rio_writen(fd, buffer, strlen(buffer));
+
+	Rio_writen(fd, host_hdr, strlen(host_hdr));
+	printf("%s", host_hdr);
+	Rio_writen(fd, host, strlen(host));
+	printf("%s", host);
+	Rio_writen(fd, end, strlen(end));
+	printf("%s", end);
+
+	Rio_writen(fd, user_agent_hdr, strlen(user_agent_hdr));
+	printf("%s", user_agent_hdr);
+	Rio_writen(fd, accept_hdr, strlen(accept_hdr));
+	printf("%s", accept_hdr);
+	Rio_writen(fd, accept_encoding_hdr, strlen(accept_encoding_hdr));
+	printf("%s", accept_encoding_hdr);
+	Rio_writen(fd, connection_hdr, strlen(connection_hdr));
+	printf("%s", connection_hdr);
+	Rio_writen(fd, proxy_connection_hdr, strlen(proxy_connection_hdr));
+	printf("%s", proxy_connection_hdr);
+	Rio_writen(fd, end, strlen(end));
+	printf("%s", end);
+	Rio_writen(fd, end, strlen(end));
 	printf("send message success\n");
 }
 
@@ -160,11 +170,13 @@ void read_requesthdrs(rio_t *rp){
 	char buf[MAXLINE];
 
 	Rio_readlineb(rp, buf, MAXLINE);
+	printf("header starts\n");
 	printf("%s", buf);
 	while(strcmp(buf, "\r\n")){
 		Rio_readlineb(rp, buf, MAXLINE);
 		printf("%s", buf);
 	}
+	printf("header ends\n");
 	return;
 }
 
