@@ -6,9 +6,11 @@
 #define MAX_OBJECT_SIZE 102400
 
 /* You won't lose style points for including these long lines in your code */
-static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
-static const char *accept_hdr = "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n";
-static const char *accept_encoding_hdr = "Accept-Encoding: gzip, deflate\r\n";
+static char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
+static char *accept_hdr = "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n";
+static char *accept_encoding_hdr = "Accept-Encoding: gzip, deflate\r\n";
+static char *connection_hdr = "Connection: close\r\n";
+static char *proxy_connection_hdr = "Proxy-connection: close\r\n";
 
 void doit(int fd);
 void read_requesthdrs(rio_t *rp);
@@ -21,6 +23,7 @@ void clienterror(int fd, char* cause, char* errnum,
 		char* shortmsg, char* longmsg);
 void serve_dynamic(int fd, char* filename, char* cgiargs);
 void get_server_name_and_content(char* fileName, char* serverName, char* content);
+void raise_error(const char* error);
 
 
 
@@ -47,40 +50,46 @@ int main(int argc, char** argv)
 		Close(connfd);
 	}
 }
+char request[MAXLINE];
 
-//helper function that establishes a connection with a server
-//returns descriptor is OK, -1 on Unix error, -2 on DNS error
-int open_clientfd(char* hostname, int port){
-	int clientfd;
-	struct hostent * hp;
-	struct sockaddr_in serveraddr;
+void sendit(int fd, char* host, char* message){
+	//char* host_hdr = "Host: ";
+	char* end  = "\r\n";
+	//Rio_writen(fd, host_hdr, sizeof(host_hdr));
+	//Rio_writen(fd, host, sizeof(host));
+	//Rio_writen(fd, end, sizeof(end));
 
-	if((clientfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
-		return -1;
-	}
-	if((hp = gethostbyname(hostname)) == NULL){
-		return -2;
-	}
-	bzero((char*) &serveraddr, sizeof(serveraddr));
-	serveraddr.sin_family = AF_INET;
-	bcopy((char*)hp->h_addr_list[0],
-		(char*)&serveraddr.sin_addr.s_addr, hp->h_length);
-	serveraddr.sin_port = htons(port)
-
-	if(connect(clientfd, (SA*)&serveraddr, sizeof(serveraddr)) < 0){
-		return -1;
-	}
-	return clientfd;
+	//Rio_writen(fd, user_agent_hdr, sizeof(user_agent_hdr));
+	//Rio_writen(fd, accept_hdr, sizeof(accept_hdr));
+	//Rio_writen(fd, accept_encoding_hdr, sizeof(accept_encoding_hdr));
+	//Rio_writen(fd, connection_hdr, sizeof(connection_hdr));
+	//Rio_writen(fd, proxy_connection_hdr, sizeof(proxy_connection_hdr));
+	char buffer[MAXLINE];
+	sprintf(buffer, "GET /%s HTTP/1.0\r\n\r\n", message);
+	printf("request: %s\n", buffer);
+	Rio_writen(fd, buffer, sizeof(buffer));
+	Rio_writen(fd, end, sizeof(end));
+	Rio_writen(fd, end, sizeof(end));
+	printf("send message success\n");
 }
 
-void send_request_to_server(char* message, int port){
-	int fd = open_clientfd(message, port);
-	Rio_writen(fd, message, sizeof(message));
+void send_request_to_server(char* server, char* message, int port){
 	rio_t rio;
-	char buffer[MAXLINE];
+	int fd = Open_clientfd(server, port);
 	Rio_readinitb(&rio, fd);
-	Rio_readlineb(&rio, buffer, MAXLINE);
-	printf("answer = %s\n", buffer);
+	if(fd < 0){
+		printf("connect to server failed\n");
+		return;
+	}else{
+		printf("connect to server succeed\n");
+	}
+	sendit(fd, server, message);
+	char buffer[MAXLINE];
+	while(Rio_readlineb(&rio, buffer, MAXLINE) != 0){
+		printf("%s", buffer);
+	}
+	Close(fd);
+
 }
 
 void doit(int fd){
@@ -101,8 +110,9 @@ void doit(int fd){
 	read_requesthdrs(&rio);
 	is_static = parse_uri(uri, filename, cgiargs);
 	char serverName[100];
-	char content = [100];
+	char content [100];
 	get_server_name_and_content(filename, serverName, content);
+	send_request_to_server(serverName, content, 80);
 	if(stat(filename, &sbuf) < 0){
 		clienterror(fd, filename, "404", "Not found",
 			"Tiny couldn't find this file");
@@ -129,8 +139,8 @@ void doit(int fd){
 int find_slash(char* fileName){
 	int length = strlen(fileName);
 	for(int i = 0; i < length; ++i){
-		if(i =! 0 && i != length - 1){
-			if(fileName[i] == '/' && fileName[i - 1] != '/' && fileName[i + 1] != '/'){
+		if((i != 0) && (i != length - 1)){
+			if((fileName[i] == '/') && (fileName[i - 1] != '/') && (fileName[i + 1] != '/')){
 				return i;
 			}
 		}
@@ -169,7 +179,7 @@ int parse_uri(char* uri, char* filename, char* cgiargs){
 	char* ptr;
 	if(!strstr(uri, "cgi-bin")){
 		strcpy(cgiargs, "");
-		strcpy(filename, ".");
+		strcpy(filename, "");
 		strcat(filename, uri);
 		if(uri[strlen(uri) - 1] == '/'){
 			strcat(filename, "home.html");
@@ -260,7 +270,6 @@ void clienterror(int fd, char* cause, char* errnum,
 
 
 
-void raise_error(char* error){
+void raise_error(const char* error){
 	printf("fuck %s\n", error);
-	exit(0);
 }
