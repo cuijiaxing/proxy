@@ -158,7 +158,7 @@ void* doit(void* param){
 	char* cached_content = visit(uri);
 	if(cached_content!= NULL){
 		Rio_writen(fd, cached_content, sizeof(cached_content));
-		printf("send from cache");
+		printf("*************send from cache*****************");
 		return NULL;
 	}
 	parse_uri(uri, filename, cgiargs);

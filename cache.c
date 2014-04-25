@@ -51,15 +51,13 @@ void init_cache(){
 void cache(char* uri, char* content, size_t n){
 	P(&q_mutex);
 	P(&v_mutex);
-	if(strlen(content) > max_single_length){
-		//cache object is too large
-		return ;
-	}
-	while(strlen(content) > get_remaining_size()){
-		evict();
-	}
-	if(strlen(content) <= get_remaining_size()){
-		cache(uri, content, n);
+	if(strlen(content) <= max_single_length){
+		while(strlen(content) > get_remaining_size()){
+			evict();
+		}
+		if(strlen(content) <= get_remaining_size()){
+			cache_it(uri, content, n);
+		}
 	}
 	V(&v_mutex);
 	V(&q_mutex);
@@ -79,7 +77,7 @@ char* visit(char* uri){
 
 	P(&r_mutex);
 	--read_count;
-	if(count == 0){
+	if(read_count == 0){
 		V(&v_mutex);
 	}
 	V(&r_mutex);
@@ -110,6 +108,7 @@ char* find_cache(char* uri){
 		if(!strcmp(temp_head->uri, uri)){
 			break;
 		}
+		temp_head = temp_head->next;
 	}
 	if(temp_head){
 		temp_head->time = get_time();
