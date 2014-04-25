@@ -22,7 +22,7 @@ void server_dynamic(int fd, char* cause, char* errnum,
 void clienterror(int fd, char* cause, char* errnum, 
 		char* shortmsg, char* longmsg);
 void serve_dynamic(int fd, char* filename, char* cgiargs);
-void get_server_name_and_content(char* fileName, char* serverName, char* content);
+int get_server_name_and_content(char* fileName, char* serverName, char* content);
 void raise_error(const char* error);
 int get_port(char* server);
 
@@ -50,13 +50,15 @@ int main(int argc, char** argv)
 		connfd = Accept(listenfd, (SA*)&clientaddr, (socklen_t*)&clientlen);
 		int* param = (int*)malloc(sizeof(int));
 		*param = connfd;
-		printf("prev fd = %d\n", connfd);
 		Pthread_create(&thread, NULL, doit, (void*)param);
 	}
 }
 char request[MAXLINE];
 
 void sendit(int fd, char* host, char* hdr, char* message){
+	if(strlen(message) == 0){
+		return;
+	}
 	char* end  = "\r\n";
 	char buffer[MAXLINE];
 	sprintf(buffer, "GET /%s HTTP/1.0\r\n", message);
@@ -109,7 +111,6 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 
 void* doit(void* param){
 	int fd = *((int*)param);
-	printf("fd = %d\n", fd);
 	free((int*)param);
 	int is_static;
 	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE], revised_hdr[MAXLINE];
@@ -121,6 +122,8 @@ void* doit(void* param){
 	Rio_readinitb(&rio, fd);
 	Rio_readlineb(&rio, buf, MAXLINE);
 	sscanf(buf, "%s %s %s", method, uri, version);
+	printf("request:\n");
+	printf("%s", buf);
 	if(strcasecmp(method, "GET")){
 		clienterror(fd, method, "501", "Not Implemented", 
 			"Tiny does not implement this method");
@@ -130,7 +133,9 @@ void* doit(void* param){
 	is_static = parse_uri(uri, filename, cgiargs);
 	char serverName[MAXLINE];
 	char content [MAXLINE];
-	get_server_name_and_content(filename, serverName, content);
+	if(get_server_name_and_content(filename, serverName, content) < 0){
+		return NULL;
+	}
 	char* newServerName = get_rid_of_http(serverName);
 	printf("new server:%s\n", newServerName);
 
@@ -229,18 +234,27 @@ int find_slash(char* fileName){
 	return -1;
 }
 
-void get_server_name_and_content(char* fileName, char* serverName, char* content){
+int get_server_name_and_content(char* fileName, char* serverName, char* content){
 	int slash_index = find_slash(fileName);
 	printf("index = %d\n", slash_index);
 	if(slash_index < 0){
 		raise_error("bad url from get server name");
+		if(strlen(fileName) == 0){
+			return -1;
+		}
+		slash_index = strlen(fileName);
+		fileName[slash_index] = '\0';
+		strcpy(serverName, fileName);
+		strcpy(content, "/");
+	}else{
+		fileName[slash_index] = '\0';
+		strcpy(serverName, fileName);
+		strcpy(content, fileName + slash_index + 1);
 	}
-	fileName[slash_index] = '\0';
-	strcpy(serverName, fileName);
-	strcpy(content, fileName + slash_index + 1);
-	printf("file name = %s\n", fileName);
-	printf("server name = %s\n", serverName);
+	printf("file name = %s, length = %zd\n", fileName, strlen(fileName));
+	printf("server name = %s length = %zd\n", serverName, strlen(serverName));
 	printf("content = %s\n", content);
+	return 0;
 }
 
 
@@ -278,7 +292,7 @@ int parse_uri(char* uri, char* filename, char* cgiargs){
 		strcpy(filename, "");
 		strcat(filename, uri);
 		if(uri[strlen(uri) - 1] == '/'){
-			strcat(filename, "home.html");
+			strcat(filename, "");
 		}
 		return 1;
 	}else{
