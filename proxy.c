@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "csapp.h"
+#include "cache.h"
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
@@ -44,6 +45,9 @@ int main(int argc, char** argv)
 		exit(1);
 	}
 	port = atoi(argv[1]);
+
+	//init cache
+	init_cache();
 	
 	listenfd = Open_listenfd(port);
 	while(1){
@@ -82,7 +86,16 @@ char* get_rid_of_http(char* hostname){
 }
 
 
-void send_request_to_server(int client_fd, char* server, char* hdr, char* message, int port){
+size_t get_content_length(char* header){
+	char* obj = "Content-Length: ";
+	if(strstr(header, obj) != NULL){
+		return atoi(header + strlen(obj));
+	}
+	return -1;
+}
+
+
+void send_request_to_server(int client_fd, char* server, char* hdr, char* message, int port, char* uri){
 	rio_t rio;
 	int fd = Open_clientfd(server, port);
 	if(fd < 0){
@@ -95,13 +108,33 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 	Rio_readinitb(&rio, fd);
 	char buffer[MAXLINE];
 	size_t n;
-	while((n = Rio_readnb(&rio, buffer, MAXLINE)) > 0){
+	size_t content_length = -1;
+	int should_cache = 0;
+	char temp_cache[1024 * 1024];	
+	printf("return header:\n");
+	while((n = Rio_readlineb(&rio, buffer, MAXLINE)) > 0){
 		Rio_writen(client_fd, buffer, n);
 		//printf("%s", buffer);
-		memset(buffer, 0, sizeof(buffer));
+		if(content_length == -1){
+			content_length = get_content_length(buffer);
+		}
+		strncat(temp_cache, buffer, n);
+		if(!strcmp(buffer, "\r\n")){
+			break;
+		}
 	}
-	if(strlen(buffer) > 0){
-		Rio_writen(client_fd, buffer, strlen(buffer));
+	printf("end of return header, size = %zd\n", content_length);
+	if(content_length > 0 && content_length <=  MAX_OBJECT_SIZE){
+		printf("should cache it!!!!\n");
+		memset(temp_cache, 0, sizeof(temp_cache));
+		should_cache = 1;
+	}
+	while((n = Rio_readnb(&rio, buffer, MAXLINE)) > 0){
+		strncat(temp_cache, buffer, n);
+		Rio_writen(client_fd, buffer, n);
+	}
+	if(should_cache){
+		cache(uri, temp_cache, content_length);
 	}
 	Close(fd);
 }
@@ -110,13 +143,10 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 void* doit(void* param){
 	int fd = *((int*)param);
 	free((int*)param);
-	int is_static;
 	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE], revised_hdr[MAXLINE];
 	char filename[MAXLINE], cgiargs[MAXLINE];
 	rio_t rio;
-
 	Pthread_detach(Pthread_self());
-
 	Rio_readinitb(&rio, fd);
 	Rio_readlineb(&rio, buf, MAXLINE);
 	sscanf(buf, "%s %s %s", method, uri, version);
@@ -125,8 +155,13 @@ void* doit(void* param){
 			"Tiny does not implement this method");
 		return NULL;
 	}
-
-	is_static = parse_uri(uri, filename, cgiargs);
+	char* cached_content = visit(uri);
+	if(cached_content!= NULL){
+		Rio_writen(fd, cached_content, sizeof(cached_content));
+		printf("send from cache");
+		return NULL;
+	}
+	parse_uri(uri, filename, cgiargs);
 	char serverName[MAXLINE];
 	char content [MAXLINE];
 	if(get_server_name_and_content(filename, serverName, content) < 0){
@@ -209,7 +244,7 @@ void* doit(void* param){
 	printf("------------------end----------------\n");
 	
 	int port = get_port(newServerName);
-	send_request_to_server(fd, newServerName, revised_hdr, content, port);
+	send_request_to_server(fd, newServerName, revised_hdr, content, port, uri);
 	Close(fd);	
 	return NULL;
 }
@@ -300,23 +335,6 @@ int parse_uri(char* uri, char* filename, char* cgiargs){
 	}
 }
 
-void serve_static(int fd, char* filename, int filesize){
-	int srcfd;
-	char* srcp, filetype[MAXLINE], buf[MAXBUF];
-
-	get_filetype(filename, filetype);
-	sprintf(buf, "HTTP/1.0 200 OK\r\n");
-	sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
-	sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
-	sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
-	Rio_writen(fd, buf, strlen(buf));
-
-	srcfd = Open(filename, O_RDONLY, 0);
-	srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
-	Close(srcfd);
-	Rio_writen(fd, srcp, filesize);
-	Munmap(srcp, filesize);
-}
 
 void get_filetype(char* filename, char* filetype){
 	if(strstr(filename, ".html")){
@@ -330,25 +348,6 @@ void get_filetype(char* filename, char* filetype){
 	}else{
 		strcpy(filetype, "text/plain");
 	}
-}
-
-
-
-void serve_dynamic(int fd, char* filename, char* cgiargs){
-	char buf[MAXLINE], *emptylist[] = {NULL};
-
-	sprintf(buf, "HTTP/1.0 200 OK\r\n");
-	Rio_writen(fd, buf, strlen(buf));
-	sprintf(buf, "Server: Tiny Web Server\r\n");
-	Rio_writen(fd, buf, strlen(buf));
-
-	if(Fork() == 0){
-		setenv("QUERY_STRING", cgiargs, 1);
-		Dup2(fd, STDOUT_FILENO);
-
-		Execve(filename, emptylist, environ);
-	}
-	Wait(NULL);
 }
 
 void clienterror(int fd, char* cause, char* errnum, 

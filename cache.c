@@ -42,6 +42,10 @@ void init_cache(){
 	}
 	cache_head = (LNode)malloc(sizeof(Node));
 	init_node(cache_head);
+	Sem_init(&q_mutex, 1, 1);
+	Sem_init(&v_mutex, 1, 1);
+	Sem_init(&r_mutex, 1, 1);
+	Sem_init(&time_mutex, 1, 1);
 }
 
 void cache(char* uri, char* content, size_t n){
