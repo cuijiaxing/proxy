@@ -28,7 +28,11 @@ void raise_error(const char* error);
 int get_port(char* server);
 
 /**signal hanlder*/
+void register_handler();
 void sigint_handler(int sig);
+void sigstop_handler(int sig);
+
+int listenfd;
 
 
 
@@ -36,7 +40,8 @@ void sigint_handler(int sig);
 
 int main(int argc, char** argv)
 {
-	int listenfd, connfd, port, clientlen;
+	register_handler();
+	int connfd, port, clientlen;
 	pthread_t thread;
 	struct sockaddr_in clientaddr;
 
@@ -109,12 +114,11 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 	char buffer[MAXLINE];
 	size_t n;
 	size_t content_length = -1;
-	int should_cache = 0;
-	char temp_cache[1024 * 1024];	
-	printf("return header:\n");
+	char temp_cache[1024 * 1024 + 1024];	
+	size_t response_size = 0;
 	while((n = Rio_readlineb(&rio, buffer, MAXLINE)) > 0){
 		Rio_writen(client_fd, buffer, n);
-		//printf("%s", buffer);
+		printf("%s", buffer);
 		if(content_length == -1){
 			content_length = get_content_length(buffer);
 		}
@@ -123,19 +127,19 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 			break;
 		}
 	}
-	printf("end of return header, size = %zd\n", content_length);
-	if(content_length > 0 && content_length <=  MAX_OBJECT_SIZE){
-		printf("should cache it!!!!\n");
-		memset(temp_cache, 0, sizeof(temp_cache));
-		should_cache = 1 & is_static;//we only cache static webs
-	}
 	while((n = Rio_readnb(&rio, buffer, MAXLINE)) > 0){
-		strncat(temp_cache, buffer, n);
+		response_size += n;
+		if(response_size < MAX_OBJECT_SIZE){
+			strncat(temp_cache, buffer, n);
+		}
 		Rio_writen(client_fd, buffer, n);
 	}
-	if(should_cache){
-		cache(uri, temp_cache, content_length);
+	if(response_size <= MAX_OBJECT_SIZE && is_static){
+		printf("$$$$$$$$$$$\ncached %s\n", uri);
+		cache(uri, temp_cache, response_size);
 	}
+	printf("$$$$$$$$$$$$$$$$$$$$$$$$$$\n");
+	printf("return size = %zd, actual size = %zd\n", content_length, response_size);
 	Close(fd);
 }
 
@@ -155,10 +159,16 @@ void* doit(void* param){
 			"Tiny does not implement this method");
 		return NULL;
 	}
+	printf("...........................looking for.........\n");
+	printf("%s\n", uri);
+	printf("...........................end looking for.........\n");
 	char* cached_content = visit(uri);
 	if(cached_content!= NULL){
 		Rio_writen(fd, cached_content, sizeof(cached_content));
-		printf("*************send from cache*****************");
+		printf("*************begin send from cache*****************\n");
+		printf("%s\n", uri);
+		printf("*************end send from cache*****************\n");
+		Close(fd);
 		return NULL;
 	}
 	int is_static = parse_uri(uri, filename, cgiargs);
@@ -239,9 +249,9 @@ void* doit(void* param){
 		strcat(revised_hdr, newServerName);
 		strcat(revised_hdr, "\r\n");
 	}
-	printf("-----------------start-----------------\n");
-	printf("%s", revised_hdr);
-	printf("------------------end----------------\n");
+	//printf("-----------------start-----------------\n");
+	//printf("%s", revised_hdr);
+	//printf("------------------end----------------\n");
 	
 	int port = get_port(newServerName);
 	send_request_to_server(fd, newServerName, revised_hdr, content, port, uri, is_static);
@@ -251,7 +261,6 @@ void* doit(void* param){
 
 int find_slash(char* fileName){
 	int length = strlen(fileName);
-	printf("file name length: %d\n", length);
 	for(int i = 0; i < length; ++i){
 		if(fileName[i] == '/'){
 			if(i < length - 1 && fileName[i + 1] == '/'){
@@ -278,9 +287,9 @@ int get_server_name_and_content(char* fileName, char* serverName, char* content)
 	fileName[slash_index] = '\0';
 	strcpy(serverName, fileName);
 	strcpy(content, fileName + slash_index + 1);
-	printf("file name = %s\n", fileName);
-	printf("server name = %s\n", serverName);
-	printf("content = %s\n", content);
+	//printf("file name = %s\n", fileName);
+	//printf("server name = %s\n", serverName);
+	//printf("content = %s\n", content);
 	return 0;
 }
 
@@ -313,27 +322,16 @@ int get_port(char* server){
 
 
 int parse_uri(char* uri, char* filename, char* cgiargs){
-	char* ptr;
-	printf("************parsed uri************\n");
-	printf("%s\n", uri);
-	if(!strstr(uri, "cgi-bin")){
-		strcpy(cgiargs, "");
-		strcpy(filename, "");
-		strcat(filename, uri);
-		if(uri[strlen(uri) - 1] == '/'){
-			strcat(filename, "");
-		}
-		return 1;
-	}else{
-		ptr = index(uri, '?');
-		if(ptr){
-			strcpy(cgiargs, ptr + 1);
-			*ptr = '\0';
-		}else
-			strcpy(cgiargs, "");
-		strcpy(filename, ".");
-		strcat(filename, uri);
+	strcpy(cgiargs, "");
+	strcpy(filename, "");
+	strcat(filename, uri);
+	if(uri[strlen(uri) - 1] == '/'){
+		strcat(filename, "");
+	}
+	if(strstr(filename, "?")){
 		return 0;
+	}else{
+		return 1;
 	}
 }
 
@@ -371,12 +369,21 @@ void clienterror(int fd, char* cause, char* errnum,
 	Rio_writen(fd, body, strlen(body));
 }
 
-void register_hanlder(){
+void register_handler(){
 	signal(SIGINT, sigint_handler);
+	signal(SIGSTOP, sigstop_handler);
 }
 
 void sigint_handler(int sig){
 	printf("sigint handler invoked\n");
+	Close(listenfd);
+	exit(0);
+}
+
+void sigstop_handler(int sig){
+	printf("received sigstrop\n");
+	Close(listenfd);
+	exit(0);
 }
 
 void raise_error(const char* error){
