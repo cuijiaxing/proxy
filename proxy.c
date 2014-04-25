@@ -80,7 +80,6 @@ char* get_rid_of_http(char* hostname){
 void send_request_to_server(int client_fd, char* server, char* hdr, char* message, int port){
 	rio_t rio;
 	int fd = Open_clientfd(server, port);
-	Rio_readinitb(&rio, fd);
 	if(fd < 0){
 		printf("connect to server failed\n");
 		return;
@@ -88,12 +87,17 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 		printf("connect to server succeed\n");
 	}
 	sendit(fd, server, hdr, message);
+	Rio_readinitb(&rio, fd);
 	char buffer[MAXLINE];
 	while(Rio_readlineb(&rio, buffer, MAXLINE) != 0){
 		Rio_writen(client_fd, buffer, strlen(buffer));
+		printf("%s", buffer);
+		memset(buffer, 0, sizeof(buffer));
+	}
+	if(strlen(buffer) > 0){
+		Rio_writen(client_fd, buffer, strlen(buffer));
 	}
 	Close(fd);
-
 }
 
 
