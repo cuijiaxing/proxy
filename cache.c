@@ -64,7 +64,6 @@ void cache(char* uri, char* content, size_t n){
 	return;
 }
 
-
 char* visit(char* uri){
 	char* result = NULL;
 	P(&q_mutex);
@@ -100,16 +99,22 @@ void cache_it(char* uri, char* content, size_t n){
 	strncpy(node->content, content, n);
 	insert_node(node);
 	decrease_size(n);
+	printf("*********************cached******************\n");
+	printf("%s\n", uri);
+	printf("*********************end***********************\n");
 }
 
 char* find_cache(char* uri){
 	LNode temp_head = cache_head->next;
+	printf("******************look begin*************\n");
 	while(temp_head){
+		printf("%s\n", temp_head->uri);
 		if(!strcmp(temp_head->uri, uri)){
 			break;
 		}
 		temp_head = temp_head->next;
 	}
+	printf("******************look end*************\n");
 	if(temp_head){
 		temp_head->time = get_time();
 		return temp_head->content;

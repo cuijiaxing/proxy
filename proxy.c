@@ -95,7 +95,7 @@ size_t get_content_length(char* header){
 }
 
 
-void send_request_to_server(int client_fd, char* server, char* hdr, char* message, int port, char* uri){
+void send_request_to_server(int client_fd, char* server, char* hdr, char* message, int port, char* uri, int is_static){
 	rio_t rio;
 	int fd = Open_clientfd(server, port);
 	if(fd < 0){
@@ -127,7 +127,7 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 	if(content_length > 0 && content_length <=  MAX_OBJECT_SIZE){
 		printf("should cache it!!!!\n");
 		memset(temp_cache, 0, sizeof(temp_cache));
-		should_cache = 1;
+		should_cache = 1 & is_static;//we only cache static webs
 	}
 	while((n = Rio_readnb(&rio, buffer, MAXLINE)) > 0){
 		strncat(temp_cache, buffer, n);
@@ -161,7 +161,7 @@ void* doit(void* param){
 		printf("*************send from cache*****************");
 		return NULL;
 	}
-	parse_uri(uri, filename, cgiargs);
+	int is_static = parse_uri(uri, filename, cgiargs);
 	char serverName[MAXLINE];
 	char content [MAXLINE];
 	if(get_server_name_and_content(filename, serverName, content) < 0){
@@ -244,7 +244,7 @@ void* doit(void* param){
 	printf("------------------end----------------\n");
 	
 	int port = get_port(newServerName);
-	send_request_to_server(fd, newServerName, revised_hdr, content, port, uri);
+	send_request_to_server(fd, newServerName, revised_hdr, content, port, uri, is_static);
 	Close(fd);	
 	return NULL;
 }
@@ -314,6 +314,8 @@ int get_port(char* server){
 
 int parse_uri(char* uri, char* filename, char* cgiargs){
 	char* ptr;
+	printf("************parsed uri************\n");
+	printf("%s\n", uri);
 	if(!strstr(uri, "cgi-bin")){
 		strcpy(cgiargs, "");
 		strcpy(filename, "");
