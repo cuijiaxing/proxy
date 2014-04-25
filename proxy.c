@@ -22,11 +22,12 @@ void server_dynamic(int fd, char* cause, char* errnum,
 void clienterror(int fd, char* cause, char* errnum, 
 		char* shortmsg, char* longmsg);
 void serve_dynamic(int fd, char* filename, char* cgiargs);
-void get_server_name_and_content(char* fileName, char* serverName, char* content);
+int get_server_name_and_content(char* fileName, char* serverName, char* content);
 void raise_error(const char* error);
 int get_port(char* server);
 
-
+/**signal hanlder*/
+void sigint_handler(int sig);
 
 
 
@@ -50,7 +51,6 @@ int main(int argc, char** argv)
 		connfd = Accept(listenfd, (SA*)&clientaddr, (socklen_t*)&clientlen);
 		int* param = (int*)malloc(sizeof(int));
 		*param = connfd;
-		printf("prev fd = %d\n", connfd);
 		Pthread_create(&thread, NULL, doit, (void*)param);
 	}
 }
@@ -109,7 +109,6 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 
 void* doit(void* param){
 	int fd = *((int*)param);
-	printf("fd = %d\n", fd);
 	free((int*)param);
 	int is_static;
 	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE], revised_hdr[MAXLINE];
@@ -130,7 +129,9 @@ void* doit(void* param){
 	is_static = parse_uri(uri, filename, cgiargs);
 	char serverName[MAXLINE];
 	char content [MAXLINE];
-	get_server_name_and_content(filename, serverName, content);
+	if(get_server_name_and_content(filename, serverName, content) < 0){
+		return NULL;
+	}
 	char* newServerName = get_rid_of_http(serverName);
 	printf("new server:%s\n", newServerName);
 
@@ -209,6 +210,7 @@ void* doit(void* param){
 	
 	int port = get_port(newServerName);
 	send_request_to_server(fd, newServerName, revised_hdr, content, port);
+	Close(fd);	
 	return NULL;
 }
 
@@ -229,11 +231,14 @@ int find_slash(char* fileName){
 	return -1;
 }
 
-void get_server_name_and_content(char* fileName, char* serverName, char* content){
+int get_server_name_and_content(char* fileName, char* serverName, char* content){
 	int slash_index = find_slash(fileName);
 	printf("index = %d\n", slash_index);
 	if(slash_index < 0){
 		raise_error("bad url from get server name");
+		if(strlen(fileName) == 0){
+			return -1;
+		}
 	}
 	fileName[slash_index] = '\0';
 	strcpy(serverName, fileName);
@@ -241,6 +246,7 @@ void get_server_name_and_content(char* fileName, char* serverName, char* content
 	printf("file name = %s\n", fileName);
 	printf("server name = %s\n", serverName);
 	printf("content = %s\n", content);
+	return 0;
 }
 
 
@@ -364,7 +370,13 @@ void clienterror(int fd, char* cause, char* errnum,
 	Rio_writen(fd, body, strlen(body));
 }
 
+void register_hanlder(){
+	signal(SIGINT, sigint_handler);
+}
 
+void sigint_handler(int sig){
+	printf("sigint handler invoked\n");
+}
 
 void raise_error(const char* error){
 	printf("fuck %s\n", error);
