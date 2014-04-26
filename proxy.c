@@ -67,25 +67,23 @@ int main(int argc, char** argv)
 }
 char request[MAXLINE];
 
-void sendit(int fd, char* host, char* hdr, char* message){
+int sendit(int fd, char* host, char* hdr, char* message){
 	char* end  = "\r\n";
 	char buffer[MAXLINE];
 	sprintf(buffer, "GET /%s HTTP/1.0\r\n", message);
 	//printf("request: %s", buffer);
 	if(RRio_writen(fd, buffer, strlen(buffer))){
-		Close(fd);
-		return;
+		return close(fd);
 	}
 	if(RRio_writen(fd, hdr, strlen(hdr))){
-		Close(fd);
-		return;
+		return close(fd);
 	}
 	if(RRio_writen(fd, end, strlen(end))){
-		Close(fd);
-		return;
+		return close(fd);
 	}
 	//printf("%s", hdr);
 	//printf("send message success\n");
+	return 0;
 }
 
 char* get_rid_of_http(char* hostname){
@@ -200,12 +198,12 @@ void* doit(void* param){
 	if(cache_node != NULL){
 		printf("*************begin send from cache size = %zd*****************\n", cache_node->size);
 		if(RRio_writen(fd, cache_node->content, cache_node->size)){
-			Close(fd);
+			close(fd);
 			return NULL;
 		}
 		printf("%s\n", uri);
 		printf("*************end send from cache*****************\n");
-		Close(fd);
+		close(fd);
 		return NULL;
 	}
 	char serverName[MAXLINE];
@@ -290,7 +288,7 @@ void* doit(void* param){
 	
 	int port = get_port(newServerName);
 	send_request_to_server(fd, newServerName, revised_hdr, content, port, uri, is_static);
-	Close(fd);	
+	close(fd);	
 	return NULL;
 }
 
@@ -396,21 +394,21 @@ void clienterror(int fd, char* cause, char* errnum,
 
 	sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
 	if(RRio_writen(fd, buf, strlen(buf))){
-		Close(fd);
+		close(fd);
 		return;
 	}
 	sprintf(buf, "Content-type: text/html\r\n");
 	if(RRio_writen(fd, buf, strlen(buf))){
-		Close(fd);
+		close(fd);
 		return;
 	}
 	sprintf(buf, "Content-length: %d\r\n\r\n", (int)strlen(body));
 	if(RRio_writen(fd, buf, strlen(buf))){
-		Close(fd);
+		close(fd);
 		return;
 	}
 	if(RRio_writen(fd, body, strlen(body))){
-		Close(fd);
+		close(fd);
 		return;
 	}
 }
@@ -427,13 +425,13 @@ void sigpipe_handler(int sig){
 
 void sigint_handler(int sig){
 	printf("sigint handler invoked\n");
-	Close(listenfd);
+	close(listenfd);
 	exit(0);
 }
 
 void sigstop_handler(int sig){
 	printf("received sigstrop\n");
-	Close(listenfd);
+	close(listenfd);
 	exit(0);
 }
 
