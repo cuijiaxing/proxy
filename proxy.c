@@ -214,7 +214,14 @@ void* doit(void* param){
 	if(get_server_name_and_content(filename, serverName, content) < 0){
 		return NULL;
 	}
+	printf("before revise:%s\n", serverName);
 	char* newServerName = get_rid_of_http(serverName);
+	printf("after revise %s\n", newServerName);
+	int port = get_port(newServerName);
+	printf("-----------------start-----------------\n");
+	printf("%s\n", newServerName);
+	printf("port = %d\n", port);
+	printf("------------------end----------------\n");
 
 	//collect
 	//read init bytes
@@ -285,11 +292,7 @@ void* doit(void* param){
 		strcat(revised_hdr, newServerName);
 		strcat(revised_hdr, "\r\n");
 	}
-	//printf("-----------------start-----------------\n");
-	//printf("%s", revised_hdr);
-	//printf("------------------end----------------\n");
 	
-	int port = get_port(newServerName);
 	send_request_to_server(fd, newServerName, revised_hdr, content, port, uri, is_static);
 	close(fd);	
 	return NULL;
@@ -322,9 +325,9 @@ int get_server_name_and_content(char* fileName, char* serverName, char* content)
 	fileName[slash_index] = '\0';
 	strcpy(serverName, fileName);
 	strcpy(content, fileName + slash_index + 1);
-	//printf("file name = %s\n", fileName);
-	//printf("server name = %s\n", serverName);
-	//printf("content = %s\n", content);
+	printf("file name = %s\n", fileName);
+	printf("server name = %s\n", serverName);
+	printf("content = %s\n", content);
 	return 0;
 }
 
@@ -350,6 +353,7 @@ int get_port(char* server){
 		start_ptr[0] = '\0';
 		start_ptr += 1;
 		port = atoi(start_ptr);
+		return port;
 	}
 	//use the default port
 	return 80;
