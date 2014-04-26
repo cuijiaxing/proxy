@@ -64,8 +64,8 @@ void cache(char* uri, char* content, size_t n){
 	return;
 }
 
-char* visit(char* uri){
-	char* result = NULL;
+LNode  visit(char* uri){
+	LNode result = NULL;
 	P(&q_mutex);
 	if(read_count == 0){
 		P(&v_mutex);
@@ -73,7 +73,6 @@ char* visit(char* uri){
 	++read_count;
 	V(&q_mutex);
 	result = find_cache(uri);
-
 	P(&r_mutex);
 	--read_count;
 	if(read_count == 0){
@@ -95,29 +94,33 @@ void cache_it(char* uri, char* content, size_t n){
 	init_node(node);
 	node->uri = (char*)malloc(sizeof(char) * strlen(uri));
 	node->content = (char*)malloc(sizeof(char) * n);
+	printf("!!!!!!!!fucking size = %zd\n", sizeof(node->content));
+	node->size = n;
 	strcpy(node->uri, uri);
 	strncpy(node->content, content, n);
 	insert_node(node);
 	decrease_size(n);
 	printf("*********************cached******************\n");
-	printf("%s\n", uri);
+	printf("**************size of %zd\n", sizeof(content));
+	printf("%s, size=%zd\n", uri, n);
 	printf("*********************end***********************\n");
 }
 
-char* find_cache(char* uri){
+LNode find_cache(char* uri){
 	LNode temp_head = cache_head->next;
-	printf("******************look begin*************\n");
+	//printf("******************look begin*************\n");
 	while(temp_head){
-		printf("%s\n", temp_head->uri);
+		//printf("%s\n", temp_head->uri);
 		if(!strcmp(temp_head->uri, uri)){
 			break;
 		}
 		temp_head = temp_head->next;
 	}
-	printf("******************look end*************\n");
+	//printf("******************look end*************\n");
 	if(temp_head){
+		//race condition
 		temp_head->time = get_time();
-		return temp_head->content;
+		return temp_head;
 	}
 	return NULL;
 }

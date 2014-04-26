@@ -31,6 +31,8 @@ int get_port(char* server);
 void register_handler();
 void sigint_handler(int sig);
 void sigstop_handler(int sig);
+void sigpipe_handler(int sig);
+int RRio_writen(int fd, char* buf, size_t size);
 
 int listenfd;
 
@@ -70,11 +72,20 @@ void sendit(int fd, char* host, char* hdr, char* message){
 	char buffer[MAXLINE];
 	sprintf(buffer, "GET /%s HTTP/1.0\r\n", message);
 	//printf("request: %s", buffer);
-	Rio_writen(fd, buffer, strlen(buffer));
-	Rio_writen(fd, hdr, strlen(hdr));
-	Rio_writen(fd, end, strlen(end));
+	if(RRio_writen(fd, buffer, strlen(buffer))){
+		Close(fd);
+		return;
+	}
+	if(RRio_writen(fd, hdr, strlen(hdr))){
+		Close(fd);
+		return;
+	}
+	if(RRio_writen(fd, end, strlen(end))){
+		Close(fd);
+		return;
+	}
 	//printf("%s", hdr);
-	printf("send message success\n");
+	//printf("send message success\n");
 }
 
 char* get_rid_of_http(char* hostname){
@@ -102,12 +113,11 @@ size_t get_content_length(char* header){
 
 void send_request_to_server(int client_fd, char* server, char* hdr, char* message, int port, char* uri, int is_static){
 	rio_t rio;
-	int fd = Open_clientfd(server, port);
+	//we don't want to use Open_clientfd because it will terminate the program
+	int fd = open_clientfd(server, port);
 	if(fd < 0){
 		printf("connect to server failed\n");
 		return;
-	}else{
-		printf("connect to server succeed\n");
 	}
 	sendit(fd, server, hdr, message);
 	Rio_readinitb(&rio, fd);
@@ -115,14 +125,21 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 	size_t n;
 	size_t content_length = -1;
 	char temp_cache[1024 * 1024 + 1024];	
+	memset(temp_cache, 0, sizeof(temp_cache));
 	size_t response_size = 0;
+	char* increase_temp_cache = temp_cache;
 	while((n = Rio_readlineb(&rio, buffer, MAXLINE)) > 0){
-		Rio_writen(client_fd, buffer, n);
+		if(RRio_writen(client_fd, buffer, n)){
+			Close(client_fd);
+			return;
+		}
+		response_size += n;
 		printf("%s", buffer);
 		if(content_length == -1){
 			content_length = get_content_length(buffer);
 		}
-		strncat(temp_cache, buffer, n);
+		strncpy(increase_temp_cache, buffer, n);
+		increase_temp_cache += n;
 		if(!strcmp(buffer, "\r\n")){
 			break;
 		}
@@ -130,17 +147,29 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 	while((n = Rio_readnb(&rio, buffer, MAXLINE)) > 0){
 		response_size += n;
 		if(response_size < MAX_OBJECT_SIZE){
-			strncat(temp_cache, buffer, n);
+			strncpy(increase_temp_cache, buffer, n);
+			increase_temp_cache += n;
 		}
-		Rio_writen(client_fd, buffer, n);
+		if(RRio_writen(client_fd, buffer, n)){
+			Close(client_fd);
+			return;
+		}
 	}
 	if(response_size <= MAX_OBJECT_SIZE && is_static){
-		printf("$$$$$$$$$$$\ncached %s\n", uri);
 		cache(uri, temp_cache, response_size);
 	}
-	printf("$$$$$$$$$$$$$$$$$$$$$$$$$$\n");
-	printf("return size = %zd, actual size = %zd\n", content_length, response_size);
 	Close(fd);
+}
+
+
+int RRio_writen(int fd, char* buf, size_t size){
+	if(rio_writen(fd, buf, size) != size){
+		if(errno == EPIPE || errno == ECONNRESET){
+			fprintf(stderr, "pie error or peer reset");
+			return -1;
+		}
+	}
+	return 0;
 }
 
 
@@ -159,26 +188,32 @@ void* doit(void* param){
 			"Tiny does not implement this method");
 		return NULL;
 	}
-	printf("...........................looking for.........\n");
-	printf("%s\n", uri);
-	printf("...........................end looking for.........\n");
-	char* cached_content = visit(uri);
-	if(cached_content!= NULL){
-		Rio_writen(fd, cached_content, sizeof(cached_content));
-		printf("*************begin send from cache*****************\n");
+	
+	int is_static = parse_uri(uri, filename, cgiargs);
+	LNode cache_node = NULL;
+	if(is_static){
+		printf("...................look for ........\n");
+		printf("%s\n", uri);
+		cache_node = visit(uri);
+		printf("....................end look for ........\n");
+	}
+	if(cache_node != NULL){
+		printf("*************begin send from cache size = %zd*****************\n", cache_node->size);
+		if(RRio_writen(fd, cache_node->content, cache_node->size)){
+			Close(fd);
+			return NULL;
+		}
 		printf("%s\n", uri);
 		printf("*************end send from cache*****************\n");
 		Close(fd);
 		return NULL;
 	}
-	int is_static = parse_uri(uri, filename, cgiargs);
 	char serverName[MAXLINE];
 	char content [MAXLINE];
 	if(get_server_name_and_content(filename, serverName, content) < 0){
 		return NULL;
 	}
 	char* newServerName = get_rid_of_http(serverName);
-	printf("new server:%s\n", newServerName);
 
 	//collect
 	//read init bytes
@@ -277,7 +312,6 @@ int find_slash(char* fileName){
 
 int get_server_name_and_content(char* fileName, char* serverName, char* content){
 	int slash_index = find_slash(fileName);
-	printf("index = %d\n", slash_index);
 	if(slash_index < 0){
 		raise_error("bad url from get server name");
 		if(strlen(fileName) == 0){
@@ -361,17 +395,34 @@ void clienterror(int fd, char* cause, char* errnum,
 	sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
 
 	sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
-	Rio_writen(fd, buf, strlen(buf));
+	if(RRio_writen(fd, buf, strlen(buf))){
+		Close(fd);
+		return;
+	}
 	sprintf(buf, "Content-type: text/html\r\n");
-	Rio_writen(fd, buf, strlen(buf));
+	if(RRio_writen(fd, buf, strlen(buf))){
+		Close(fd);
+		return;
+	}
 	sprintf(buf, "Content-length: %d\r\n\r\n", (int)strlen(body));
-	Rio_writen(fd, buf, strlen(buf));
-	Rio_writen(fd, body, strlen(body));
+	if(RRio_writen(fd, buf, strlen(buf))){
+		Close(fd);
+		return;
+	}
+	if(RRio_writen(fd, body, strlen(body))){
+		Close(fd);
+		return;
+	}
 }
 
 void register_handler(){
 	signal(SIGINT, sigint_handler);
 	signal(SIGSTOP, sigstop_handler);
+	signal(SIGPIPE, sigpipe_handler);
+}
+
+void sigpipe_handler(int sig){
+	printf("pipe error\n");
 }
 
 void sigint_handler(int sig){
