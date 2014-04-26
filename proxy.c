@@ -126,25 +126,28 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 	memset(temp_cache, 0, sizeof(temp_cache));
 	size_t response_size = 0;
 	char* increase_temp_cache = temp_cache;
+	int should_cache = 1;
 	while((n = Rio_readlineb(&rio, buffer, MAXLINE)) > 0){
 		if(RRio_writen(client_fd, buffer, n)){
 			Close(client_fd);
 			return;
 		}
 		response_size += n;
-		printf("%s", buffer);
 		if(content_length == -1){
 			content_length = get_content_length(buffer);
 		}
 		strncpy(increase_temp_cache, buffer, n);
 		increase_temp_cache += n;
+		if(strstr(buffer, "ache-Control: no-cache")){
+			should_cache = 0;
+		}
 		if(!strcmp(buffer, "\r\n")){
 			break;
 		}
 	}
 	while((n = Rio_readnb(&rio, buffer, MAXLINE)) > 0){
 		response_size += n;
-		if(response_size < MAX_OBJECT_SIZE){
+		if(should_cache && response_size < MAX_OBJECT_SIZE){
 			strncpy(increase_temp_cache, buffer, n);
 			increase_temp_cache += n;
 		}
@@ -153,7 +156,7 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 			return;
 		}
 	}
-	if(response_size <= MAX_OBJECT_SIZE && is_static){
+	if(response_size <= MAX_OBJECT_SIZE && is_static & should_cache){
 		cache(uri, temp_cache, response_size);
 	}
 	Close(fd);
@@ -393,21 +396,21 @@ void clienterror(int fd, char* cause, char* errnum,
 	sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
 
 	sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
-	if(RRio_writen(fd, buf, strlen(buf))){
+	if(rio_writen(fd, buf, strlen(buf)) < 0){
 		close(fd);
 		return;
 	}
 	sprintf(buf, "Content-type: text/html\r\n");
-	if(RRio_writen(fd, buf, strlen(buf))){
+	if(rio_writen(fd, buf, strlen(buf)) < 0){
 		close(fd);
 		return;
 	}
 	sprintf(buf, "Content-length: %d\r\n\r\n", (int)strlen(body));
-	if(RRio_writen(fd, buf, strlen(buf))){
+	if(rio_writen(fd, buf, strlen(buf)) != 0){
 		close(fd);
 		return;
 	}
-	if(RRio_writen(fd, body, strlen(body))){
+	if(rio_writen(fd, body, strlen(body)) != 0){
 		close(fd);
 		return;
 	}

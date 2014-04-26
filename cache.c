@@ -94,14 +94,12 @@ void cache_it(char* uri, char* content, size_t n){
 	init_node(node);
 	node->uri = (char*)malloc(sizeof(char) * strlen(uri));
 	node->content = (char*)malloc(sizeof(char) * n);
-	printf("!!!!!!!!fucking size = %zd\n", sizeof(node->content));
 	node->size = n;
 	strcpy(node->uri, uri);
 	strncpy(node->content, content, n);
 	insert_node(node);
 	decrease_size(n);
 	printf("*********************cached******************\n");
-	printf("**************size of %zd\n", sizeof(content));
 	printf("%s, size=%zd\n", uri, n);
 	printf("*********************end***********************\n");
 }
