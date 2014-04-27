@@ -129,7 +129,7 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 	int should_cache = 1;
 	while((n = Rio_readlineb(&rio, buffer, MAXLINE)) > 0){
 		if(RRio_writen(client_fd, buffer, n)){
-			Close(client_fd);
+			close(client_fd);
 			return;
 		}
 		response_size += n;
@@ -152,19 +152,19 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 			increase_temp_cache += n;
 		}
 		if(RRio_writen(client_fd, buffer, n)){
-			Close(client_fd);
+			close(client_fd);
 			return;
 		}
 	}
 	if(response_size <= MAX_OBJECT_SIZE && is_static & should_cache){
 		cache(uri, temp_cache, response_size);
 	}
-	Close(fd);
+	close(fd);
 }
 
 
 int RRio_writen(int fd, char* buf, size_t size){
-	if(rio_writen(fd, buf, size) != size){
+	if(rio_writen(fd, buf, size) < 0){
 		if(errno == EPIPE || errno == ECONNRESET){
 			fprintf(stderr, "pie error or peer reset");
 			return -1;
@@ -196,6 +196,7 @@ void* doit(void* param){
 		printf("...................look for ........\n");
 		printf("%s\n", uri);
 		cache_node = visit(uri);
+		cache_node = NULL;
 		printf("....................end look for ........\n");
 	}
 	if(cache_node != NULL){
@@ -207,6 +208,7 @@ void* doit(void* param){
 		printf("%s\n", uri);
 		printf("*************end send from cache*****************\n");
 		close(fd);
+		free_node(cache_node);
 		return NULL;
 	}
 	char serverName[MAXLINE];

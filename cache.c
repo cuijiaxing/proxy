@@ -1,39 +1,43 @@
 #include "cache.h"
-
+#define CC_DEBUG
 
 
 LNode cache_head = NULL;
-
+#ifdef CC_DEBUG
+int output_fd = -1;
+#endif
 void init_node(LNode node){
 	node->content = NULL;
 	node->size = 0;
 	node->uri = NULL;
 	node->next = NULL;
+	#ifdef CC_DEBUG
+	output_fd = open("log.txt", O_WRONLY);
+	#endif
 }
 static long count = 0;
 static size_t total_length = 1049000;
 static size_t max_single_length = 102400;
-sem_t q_mutex, v_mutex, r_mutex, time_mutex;
+sem_t q_mutex, v_mutex, r_mutex, time_mutex, revise_time_mutex;
 int read_count = 0;
+
+#ifdef CC_DEBUG
+void cc_log(char* message){
+	write(output_fd, message, strlen(message));
+}
+#endif 
+void decrease_size(size_t t){
+	total_length -= t;
+}
+void increase_size(size_t t){
+	total_length += t;
+}
 
 long get_time(){
 	P(&time_mutex);
 	++count;
 	V(&time_mutex);
 	return count;
-}
-int set_node(LNode node, char* uri, char* content){
-	size_t length = strlen(content);
-	if(length > total_length){
-		return -1;
-	}
-	node->time = get_time();
-	node->uri = (char*)malloc(strlen(uri));
-	node->content = (char*)malloc(length);
-	strcpy(node->uri, uri);
-	strcpy(node->content, content);
-	total_length -= length;
-	return 0;
 }
 void init_cache(){
 	//alread cached
@@ -46,6 +50,7 @@ void init_cache(){
 	Sem_init(&v_mutex, 1, 1);
 	Sem_init(&r_mutex, 1, 1);
 	Sem_init(&time_mutex, 1, 1);
+	Sem_init(&revise_time_mutex, 1, 1);
 }
 
 void cache(char* uri, char* content, size_t n){
@@ -104,8 +109,22 @@ void cache_it(char* uri, char* content, size_t n){
 	printf("*********************end***********************\n");
 }
 
+//copy a node to return to server
+//to avoid race condition such as when 
+//it is returned, it is evicted before the 
+//server access it
+LNode copy_node(LNode node){
+	LNode result_node = (LNode)malloc(sizeof(Node));
+	init_node(result_node);
+	result_node->time = node->time;
+	result_node->content = (char*)malloc(sizeof(char) * node->size);
+	result_node->uri = (char*)malloc(sizeof(node->uri));
+	return result_node;
+}
+
 LNode find_cache(char* uri){
 	LNode temp_head = cache_head->next;
+	LNode result_node = NULL;
 	//printf("******************look begin*************\n");
 	while(temp_head){
 		//printf("%s\n", temp_head->uri);
@@ -117,18 +136,15 @@ LNode find_cache(char* uri){
 	//printf("******************look end*************\n");
 	if(temp_head){
 		//race condition
+		P(&revise_time_mutex);
 		temp_head->time = get_time();
-		return temp_head;
+		result_node = copy_node(temp_head);
+		V(&revise_time_mutex);
+		return result_node;
 	}
 	return NULL;
 }
 
-void decrease_size(size_t t){
-	total_length -= t;
-}
-void increase_size(size_t t){
-	total_length += t;
-}
 
 size_t get_remaining_size(){
 	return total_length;
