@@ -27,23 +27,23 @@ int get_server_name_and_content(char* fileName, char* serverName, char* content)
 void raise_error(const char* error);
 int get_port(char* server);
 
+void register_handler_chld();
+//make sure tha parent process never exits
+void register_handler_prt();
+
+void sigsegv_handler(int sig);
 /**signal hanlder*/
-void register_handler();
 void sigint_handler(int sig);
 void sigstop_handler(int sig);
 void sigpipe_handler(int sig);
 int RRio_writen(int fd, char* buf, size_t size);
 
-int listenfd;
-
-
-
 
 
 int main(int argc, char** argv)
 {
-	register_handler();
-	int connfd, port, clientlen;
+	register_handler_prt();
+	int connfd, port, clientlen, listenfd;
 	pthread_t thread;
 	struct sockaddr_in clientaddr;
 
@@ -66,8 +66,11 @@ int main(int argc, char** argv)
 			continue;
 		}
 		*param = connfd;
+		register_handler_chld();
 		Pthread_create(&thread, NULL, doit, (void*)param);
+		register_handler_prt();
 	}
+	Close(listenfd);
 }
 char request[MAXLINE];
 
@@ -427,25 +430,34 @@ void clienterror(int fd, char* cause, char* errnum,
 	}
 }
 
-void register_handler(){
+
+//when error encountered,
+//use handler to exit
+void register_handler_chld(){
 	signal(SIGINT, sigint_handler);
-	signal(SIGSTOP, sigstop_handler);
 	signal(SIGPIPE, sigpipe_handler);
+	signal(SIGSEGV, sigsegv_handler);
+}
+
+
+//make sure tha parent process never exits
+void register_handler_prt(){
+	signal(SIGPIPE, SIG_IGN);
+	signal(SIGSEGV, SIG_IGN);
 }
 
 void sigpipe_handler(int sig){
 	printf("pipe error\n");
+	exit(0);
 }
 
 void sigint_handler(int sig){
 	printf("sigint handler invoked\n");
-	close(listenfd);
 	exit(0);
 }
 
-void sigstop_handler(int sig){
-	printf("received sigstrop\n");
-	close(listenfd);
+void sigsegv_handler(int sig){
+	printf("reveived sigsegv\n");
 	exit(0);
 }
 

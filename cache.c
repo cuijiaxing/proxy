@@ -213,8 +213,6 @@ void free_node(LNode node){
 	if(node == NULL){
 		return ;
 	}
-	printf("&*(*&*&*&(*&*&evicted\n");
-	printf("%s, size=%zd\n, remaining size = %zd\n", node->uri, node->size, get_remaining_size());
 	if(node->content != NULL){
 		free(node->content);
 		node->content = NULL;
