@@ -129,6 +129,7 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 		if(verbose){
 			printf("send message failed\n");
 		}
+		close(fd);
 		return;
 	}
 	Rio_readinitb(&rio, fd);
@@ -139,14 +140,14 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 	size_t response_size = 0;
 	char* increase_temp_cache = temp_cache;
 	int should_cache = 1;
-	while((n = Rio_readlineb(&rio, buffer, MAXLINE)) > 0){
-		if(RRio_writen(client_fd, buffer, n)){
-			close(client_fd);
+	while((n = rio_readlineb(&rio, buffer, MAXLINE)) > 0){
+		if(rio_writen(client_fd, buffer, n) < 0){
+			close(fd);
 			return;
 		}
 		response_size += n;
 		if(response_size <= MAX_OBJECT_SIZE){
-			strncpy(increase_temp_cache, buffer, n);
+			memcpy(increase_temp_cache, buffer, n);
 		}
 		increase_temp_cache += n;
 		if(strstr(buffer, "Cache-Control: no-cache")){
@@ -159,29 +160,19 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 	while((n = Rio_readnb(&rio, buffer, MAXLINE)) > 0){
 		response_size += n;
 		if(should_cache && response_size < MAX_OBJECT_SIZE){
-			strncpy(increase_temp_cache, buffer, n);
+			memcpy(increase_temp_cache, buffer, n);
 			increase_temp_cache += n;
 		}
-		if(RRio_writen(client_fd, buffer, n)){
-			close(client_fd);
+		if(rio_writen(client_fd, buffer, n) < 0){
+			close(fd);
 			return;
 		}
 	}
 	if(response_size <= MAX_OBJECT_SIZE && is_static & should_cache){
+		//we don't care about if an object is successfully cached
 		cache(uri, temp_cache, response_size);
 	}
 	close(fd);
-}
-
-
-int RRio_writen(int fd, char* buf, size_t size){
-	if(rio_writen(fd, buf, size) < 0){
-		if(errno == EPIPE || errno == ECONNRESET){
-			fprintf(stderr, "pie error or peer reset");
-			return -1;
-		}
-	}
-	return 0;
 }
 
 
@@ -211,12 +202,11 @@ void* doit(void* param){
 		printf("...................look for ........\n");
 		printf("%s\n", uri);
 		cache_node = visit(uri);
-		cache_node = NULL;
 		printf("....................end look for ........\n");
 	}
 	if(cache_node != NULL){
 		printf("*************begin send from cache size = %zd*****************\n", cache_node->size);
-		if(RRio_writen(fd, cache_node->content, cache_node->size)){
+		if(rio_writen(fd, cache_node->content, cache_node->size) < 0){
 			close(fd);
 			return NULL;
 		}
@@ -245,7 +235,10 @@ void* doit(void* param){
 	memset(revised_hdr, 0, sizeof(revised_hdr));
 	int has_agent = 0, has_accept = 0, has_encoding = 0, has_connection = 0, has_proxy = 0, has_host = 0;
 	do{
-		Rio_readlineb(&rio, buf, MAXLINE);
+		if(rio_readlineb(&rio, buf, MAXLINE) < 0){
+			close(fd);
+			return NULL;
+		}
 		if(strstr(buf, "User-Agent") != NULL){
 			if(!has_agent){
 				strcat(revised_hdr, user_agent_hdr);

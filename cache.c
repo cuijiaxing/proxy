@@ -125,7 +125,7 @@ int cache_it(char* uri, char* content, size_t n){
 	}
 	node->size = n;
 	strcpy(node->uri, uri);
-	strncpy(node->content, content, n);
+	memcpy(node->content, content, n);
 	insert_node(node);
 	decrease_size(n);
 	printf("*********************cached******************\n");
@@ -145,6 +145,7 @@ LNode copy_node(LNode node){
 	}
 	init_node(result_node);
 	result_node->time = node->time;
+	result_node->size = node->size;
 	result_node->content = (char*)malloc(sizeof(char) * node->size);
 	if(result_node->content == NULL){
 		return NULL;
@@ -154,7 +155,7 @@ LNode copy_node(LNode node){
 		return NULL;
 	}
 	strcpy(result_node->uri, node->uri);
-	strncpy(result_node->content, node->content, node->size);
+	memcpy(result_node->content, node->content, node->size);
 	return result_node;
 }
 
