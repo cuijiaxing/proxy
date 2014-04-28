@@ -12,8 +12,8 @@ typedef struct node{
 void init_node(LNode node);
 long get_time();
 int set_node(LNode node, char* uri, char* content);
-void init_cache();
-void cache_it(char* uri, char* content, size_t n);
+int init_cache();
+int cache_it(char* uri, char* content, size_t n);
 LNode visit(char* uri);
 void cache(char*uri, char* content, size_t n);
 LNode find_cache(char* uri);

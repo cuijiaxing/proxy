@@ -61,6 +61,10 @@ int main(int argc, char** argv)
 		clientlen = sizeof(clientaddr);
 		connfd = Accept(listenfd, (SA*)&clientaddr, (socklen_t*)&clientlen);
 		int* param = (int*)malloc(sizeof(int));
+		if(param == NULL){
+			//no enough memory
+			continue;
+		}
 		*param = connfd;
 		Pthread_create(&thread, NULL, doit, (void*)param);
 	}

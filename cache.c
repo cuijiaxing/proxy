@@ -50,14 +50,18 @@ void very_beginning(){
 	Sem_init(&time_mutex, 1, 1);
 	Sem_init(&revise_time_mutex, 1, 1);
 }
-void init_cache(){
+int init_cache(){
 	//alread cached
 	if(cache_head != NULL){
-		return;
+		return 0;
 	}
 	very_beginning();
 	cache_head = (LNode)malloc(sizeof(Node));
+	if(cache_head == NULL){
+		return -1;
+	}
 	init_node(cache_head);
+	return 0;
 }
 
 void cache(char* uri, char* content, size_t n){
@@ -101,20 +105,33 @@ void insert_node(LNode node){
 }
 
 
-void cache_it(char* uri, char* content, size_t n){
+int cache_it(char* uri, char* content, size_t n){
 	LNode node = (LNode)malloc(sizeof(Node));
+	if(node == NULL){
+		return -1;
+	}
 	init_node(node);
 	node->uri = (char*)malloc(sizeof(char) * (strlen(uri) + 1));
+	if(node->uri == NULL){
+		return -1;
+	}
+	if(node->uri == NULL){
+		return -1;
+	}
+
 	node->content = (char*)malloc(sizeof(char) * n);
+	if(node->content == NULL){
+		return -1;
+	}
 	node->size = n;
 	strcpy(node->uri, uri);
-	size_t test_size = strlen(node->uri);
 	strncpy(node->content, content, n);
 	insert_node(node);
 	decrease_size(n);
 	printf("*********************cached******************\n");
 	printf("%s, size=%zd, remaining size=%zd\n", uri, n, get_remaining_size());
 	printf("*********************end***********************\n");
+	return 0;
 }
 
 //copy a node to return to server
@@ -123,10 +140,19 @@ void cache_it(char* uri, char* content, size_t n){
 //server access it
 LNode copy_node(LNode node){
 	LNode result_node = (LNode)malloc(sizeof(Node));
+	if(result_node == NULL){
+		return result_node;
+	}
 	init_node(result_node);
 	result_node->time = node->time;
 	result_node->content = (char*)malloc(sizeof(char) * node->size);
+	if(result_node->content == NULL){
+		return NULL;
+	}
 	result_node->uri = (char*)malloc((strlen(node->uri) + 1) * sizeof(char));
+	if(result_node->uri == NULL){
+		return NULL;
+	}
 	strcpy(result_node->uri, node->uri);
 	strncpy(result_node->content, node->content, node->size);
 	return result_node;
