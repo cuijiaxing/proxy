@@ -95,15 +95,12 @@ int sendit(int fd, char* host, char* hdr, char* message){
 	sprintf(buffer, "GET /%s HTTP/1.0\r\n", message);
 	//printf("request: %s", buffer);
 	if(rio_writen(fd, buffer, strlen(buffer)) < 0){
-		close(fd);
 		return -1;
 	}
 	if(rio_writen(fd, hdr, strlen(hdr)) < 0){
-		close(fd);
 		return -1;
 	}
 	if(rio_writen(fd, end, strlen(end)) < 0){
-		close(fd);
 		return -1;
 	}
 	return 0;
@@ -119,30 +116,26 @@ char* get_rid_of_http(char* hostname){
 }
 
 
-
-size_t get_content_length(char* header){
-	char* obj = "Content-Length: ";
-	if(strstr(header, obj) != NULL){
-		return atoi(header + strlen(obj));
-	}
-	return -1;
-}
-
-
 void send_request_to_server(int client_fd, char* server, char* hdr, char* message, int port, char* uri, int is_static){
 	rio_t rio;
 	//we don't want to use Open_clientfd because it will terminate the program
 	int fd = open_clientfd(server, port);
 	if(fd < 0){
-		printf("connect to server failed\n");
+		if(verbose){
+			printf("connect to server failed\n");
+		}
 		return;
 	}
-	sendit(fd, server, hdr, message);
+	if(sendit(fd, server, hdr, message) < 0){
+		if(verbose){
+			printf("send message failed\n");
+		}
+		return;
+	}
 	Rio_readinitb(&rio, fd);
 	char buffer[MAXLINE];
 	size_t n;
-	size_t content_length = -1;
-	char temp_cache[1024 * 1024 + 1024];	
+	char temp_cache[MAX_OBJECT_SIZE];	
 	memset(temp_cache, 0, sizeof(temp_cache));
 	size_t response_size = 0;
 	char* increase_temp_cache = temp_cache;
@@ -153,12 +146,11 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 			return;
 		}
 		response_size += n;
-		if(content_length == -1){
-			content_length = get_content_length(buffer);
+		if(response_size <= MAX_OBJECT_SIZE){
+			strncpy(increase_temp_cache, buffer, n);
 		}
-		strncpy(increase_temp_cache, buffer, n);
 		increase_temp_cache += n;
-		if(strstr(buffer, "ache-Control: no-cache")){
+		if(strstr(buffer, "Cache-Control: no-cache")){
 			should_cache = 0;
 		}
 		if(!strcmp(buffer, "\r\n")){
@@ -195,9 +187,12 @@ int RRio_writen(int fd, char* buf, size_t size){
 
 
 void* doit(void* param){
+	//int* a = (int*)100;
+	//*a = 100;
 	int fd = *((int*)param);
-	printf("free port\n");
-	free((int*)param);
+	if(param != NULL){
+		free((int*)param);
+	}
 	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE], revised_hdr[MAXLINE];
 	char filename[MAXLINE], cgiargs[MAXLINE];
 	rio_t rio;
@@ -461,17 +456,14 @@ void register_handler_prt(){
 
 void sigpipe_handler(int sig){
 	printf("pipe error\n");
-	exit(0);
 }
 
 void sigint_handler(int sig){
 	printf("sigint handler invoked\n");
-	exit(0);
 }
 
 void sigsegv_handler(int sig){
 	printf("reveived sigsegv\n");
-	exit(0);
 }
 
 void raise_error(const char* error){

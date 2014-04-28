@@ -7,8 +7,8 @@ LNode cache_head = NULL;
 int output_fd = -1;
 #endif
 static long count = 0;
-static size_t total_length = 10240;//1049000;
-static size_t max_single_length = 10240;//102400;
+static size_t total_length = 1049000;
+static size_t max_single_length = 102400;
 sem_t q_mutex, v_mutex, r_mutex, time_mutex, revise_time_mutex;
 int read_count = 0;
 
