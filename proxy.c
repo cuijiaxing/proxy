@@ -6,7 +6,7 @@
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
 
-static int verbose = 0;
+static int verbose = 1;
 
 /* You won't lose style points for including these long lines in your code */
 static char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
@@ -16,6 +16,7 @@ static char *connection_hdr = "Connection: close\r\n";
 static char *proxy_connection_hdr = "Proxy-connection: close\r\n";
 
 void* doit(void* param);
+void print_errno(int err);
 int parse_uri(char* uri, char* filename, char* cgiargs);
 void serve_static(int fd, char* filename, int filesize);
 void get_filetype(char* filename, char* filetype);
@@ -25,7 +26,6 @@ void clienterror(int fd, char* cause, char* errnum,
 		char* shortmsg, char* longmsg);
 void serve_dynamic(int fd, char* filename, char* cgiargs);
 int get_server_name_and_content(char* fileName, char* serverName, char* content);
-void raise_error(const char* error);
 int get_port(char* server);
 
 void register_handler_chld();
@@ -64,6 +64,7 @@ int main(int argc, char** argv)
 		if(connfd < 0){
 			if(verbose){
 				fprintf(stderr, "accept error\n");
+				print_errno(errno);
 			}
 			continue;
 		}
@@ -72,6 +73,7 @@ int main(int argc, char** argv)
 			if(verbose){
 				fprintf(stderr, "no memory to start the child process\n");
 			}
+			close(connfd);
 			continue;
 		}
 		*param = connfd;
@@ -81,6 +83,7 @@ int main(int argc, char** argv)
 			if(verbose){
 				fprintf(stderr, "create child process failed!\n");
 			}
+			close(connfd);
 		}
 		register_handler_prt();
 	}
@@ -94,12 +97,21 @@ int sendit(int fd, char* host, char* hdr, char* message){
 	sprintf(buffer, "GET /%s HTTP/1.0\r\n", message);
 	//printf("request: %s", buffer);
 	if(rio_writen(fd, buffer, strlen(buffer)) < 0){
+		if(verbose){
+			fprintf(stderr, "send get request failed\n");
+		}
 		return -1;
 	}
 	if(rio_writen(fd, hdr, strlen(hdr)) < 0){
+		if(verbose){
+			fprintf(stderr, "send hdr failed\n");
+		}
 		return -1;
 	}
 	if(rio_writen(fd, end, strlen(end)) < 0){
+		if(verbose){
+			fprintf(stderr, "send tail failed\n");
+		}
 		return -1;
 	}
 	return 0;
@@ -114,8 +126,27 @@ char* get_rid_of_http(char* hostname){
 
 }
 
+void print_errno(int err){
+	switch(err){
+		case ENOBUFS:
+			printf("no enough buf\n");
+			break;
+		case ENOMEM:
+			printf("no enough mem\n");
+			break;
+		case EMFILE:
+			printf("per process limit reached\n");
+			break;
+		default:
+			printf("no known\n");
+			break;
+	}
+	printf("errno = %d\n", err);
+	return;
+}
 
-void send_request_to_server(int client_fd, char* server, char* hdr, char* message, int port, char* uri, int is_static){
+
+int send_request_to_server(int client_fd, char* server, char* hdr, char* message, int port, char* uri, int is_static){
 	rio_t rio;
 	//we don't want to use Open_clientfd because it will terminate the program
 	int fd = open_clientfd(server, port);
@@ -123,14 +154,14 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 		if(verbose){
 			printf("connect to server failed\n");
 		}
-		return;
+		return -1;
 	}
 	if(sendit(fd, server, hdr, message) < 0){
 		if(verbose){
 			printf("send message failed\n");
 		}
 		close(fd);
-		return;
+		return -1;
 	}
 	Rio_readinitb(&rio, fd);
 	char buffer[MAXLINE];
@@ -143,7 +174,7 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 	while((n = rio_readlineb(&rio, buffer, MAXLINE)) > 0){
 		if(rio_writen(client_fd, buffer, n) < 0){
 			close(fd);
-			return;
+			return -1;
 		}
 		response_size += n;
 		if(response_size <= MAX_OBJECT_SIZE){
@@ -157,7 +188,11 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 			break;
 		}
 	}
-	while((n = Rio_readnb(&rio, buffer, MAXLINE)) > 0){
+	if( n < 0){
+		close(fd);
+		return -1;
+	}
+	while((n = rio_readnb(&rio, buffer, MAXLINE)) > 0){
 		response_size += n;
 		if(should_cache && response_size < MAX_OBJECT_SIZE){
 			memcpy(increase_temp_cache, buffer, n);
@@ -165,14 +200,19 @@ void send_request_to_server(int client_fd, char* server, char* hdr, char* messag
 		}
 		if(rio_writen(client_fd, buffer, n) < 0){
 			close(fd);
-			return;
+			return -1;
 		}
+	}
+	if(n < 0){
+		close(fd);
+		return -1;
 	}
 	if(response_size <= MAX_OBJECT_SIZE && is_static & should_cache){
 		//we don't care about if an object is successfully cached
 		cache(uri, temp_cache, response_size);
 	}
 	close(fd);
+	return 0;
 }
 
 
@@ -183,6 +223,8 @@ void* doit(void* param){
 	int fd = *((int*)param);
 	if(param != NULL){
 		free((int*)param);
+	}else{
+		return NULL;
 	}
 	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE], revised_hdr[MAXLINE];
 	char filename[MAXLINE], cgiargs[MAXLINE];
@@ -193,6 +235,7 @@ void* doit(void* param){
 	if(strcasecmp(method, "GET")){
 		clienterror(fd, method, "501", "Not Implemented", 
 			"Tiny does not implement this method");
+		close(fd);
 		return NULL;
 	}
 	
@@ -207,6 +250,7 @@ void* doit(void* param){
 	if(cache_node != NULL){
 		printf("*************begin send from cache size = %zd*****************\n", cache_node->size);
 		if(rio_writen(fd, cache_node->content, cache_node->size) < 0){
+			free_node(cache_node);
 			close(fd);
 			return NULL;
 		}
@@ -219,6 +263,10 @@ void* doit(void* param){
 	char serverName[MAXLINE];
 	char content [MAXLINE];
 	if(get_server_name_and_content(filename, serverName, content) < 0){
+		if(verbose){
+			fprintf(stderr, "get server name failed\n");
+		}
+		close(fd);
 		return NULL;
 	}
 	printf("before revise:%s\n", serverName);
@@ -236,6 +284,9 @@ void* doit(void* param){
 	int has_agent = 0, has_accept = 0, has_encoding = 0, has_connection = 0, has_proxy = 0, has_host = 0;
 	do{
 		if(rio_readlineb(&rio, buf, MAXLINE) < 0){
+			if(verbose){
+				fprintf(stderr, "read request hdr failed\n");
+			}
 			close(fd);
 			return NULL;
 		}
@@ -304,7 +355,8 @@ void* doit(void* param){
 	}
 	
 	send_request_to_server(fd, newServerName, revised_hdr, content, port, uri, is_static);
-	close(fd);	
+	close(fd);
+	printf("thread ended\n");
 	return NULL;
 }
 
@@ -327,17 +379,24 @@ int find_slash(char* fileName){
 int get_server_name_and_content(char* fileName, char* serverName, char* content){
 	int slash_index = find_slash(fileName);
 	if(slash_index < 0){
-		raise_error("bad url from get server name");
-		if(strlen(fileName) == 0){
+		if(strlen(fileName) > 0){
+			strcpy(serverName, fileName);
+			content[0] = '0';
+			return 0;
+		}else{
+			fprintf(stderr, "bad url");
 			return -1;
 		}
+	}else{
+		fileName[slash_index] = '\0';
+		strcpy(serverName, fileName);
+		strcpy(content, fileName + slash_index + 1);
 	}
-	fileName[slash_index] = '\0';
-	strcpy(serverName, fileName);
-	strcpy(content, fileName + slash_index + 1);
-	printf("file name = %s\n", fileName);
-	printf("server name = %s\n", serverName);
-	printf("content = %s\n", content);
+	if(verbose){
+		printf("file name = %s\n", fileName);
+		printf("server name = %s\n", serverName);
+		printf("content = %s\n", content);
+	}
 	return 0;
 }
 
@@ -393,11 +452,11 @@ void clienterror(int fd, char* cause, char* errnum,
 		return;
 	}
 	sprintf(buf, "Content-length: %d\r\n\r\n", (int)strlen(body));
-	if(rio_writen(fd, buf, strlen(buf)) != 0){
+	if(rio_writen(fd, buf, strlen(buf)) < 0){
 		close(fd);
 		return;
 	}
-	if(rio_writen(fd, body, strlen(body)) != 0){
+	if(rio_writen(fd, body, strlen(body)) < 0){
 		close(fd);
 		return;
 	}
@@ -407,16 +466,13 @@ void clienterror(int fd, char* cause, char* errnum,
 //when error encountered,
 //use handler to exit
 void register_handler_chld(){
-	signal(SIGINT, sigint_handler);
 	signal(SIGPIPE, sigpipe_handler);
-	signal(SIGSEGV, sigsegv_handler);
 }
 
 
 //make sure tha parent process never exits
 void register_handler_prt(){
 	signal(SIGPIPE, SIG_IGN);
-	signal(SIGSEGV, SIG_IGN);
 }
 
 void sigpipe_handler(int sig){
@@ -429,8 +485,4 @@ void sigint_handler(int sig){
 
 void sigsegv_handler(int sig){
 	printf("reveived sigsegv\n");
-}
-
-void raise_error(const char* error){
-	printf("fuck %s\n", error);
 }

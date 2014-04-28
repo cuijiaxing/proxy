@@ -4,7 +4,6 @@
 
 LNode cache_head = NULL;
 #ifdef CC_DEBUG
-int output_fd = -1;
 #endif
 static long count = 0;
 static size_t total_length = 1049000;
@@ -14,7 +13,7 @@ int read_count = 0;
 
 #ifdef CC_DEBUG
 void cc_log(char* message){
-	write(output_fd, message, strlen(message));
+	fprintf(stderr, message, strlen(message));
 }
 #endif 
 long get_time(){
@@ -32,7 +31,7 @@ void init_node(LNode node){
 	node->next = NULL;
 	node->time = get_time();
 	#ifdef CC_DEBUG
-	output_fd = open("log.txt", O_WRONLY);
+	//output_fd = open("log.txt", O_WRONLY);
 	#endif
 }
 void decrease_size(size_t t){
