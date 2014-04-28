@@ -6,6 +6,7 @@
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
 
+
 static int verbose = 1;
 
 /* You won't lose style points for including these long lines in your code */
@@ -242,20 +243,21 @@ void* doit(void* param){
 	int is_static = parse_uri(uri, filename, cgiargs);
 	LNode cache_node = NULL;
 	if(is_static){
+		#ifdef DEBUG
 		printf("...................look for ........\n");
 		printf("%s\n", uri);
+		#endif
 		cache_node = visit(uri);
+		#ifdef DEBUG
 		printf("....................end look for ........\n");
+		#endif
 	}
 	if(cache_node != NULL){
-		printf("*************begin send from cache size = %zd*****************\n", cache_node->size);
 		if(rio_writen(fd, cache_node->content, cache_node->size) < 0){
 			free_node(cache_node);
 			close(fd);
 			return NULL;
 		}
-		printf("%s\n", uri);
-		printf("*************end send from cache*****************\n");
 		close(fd);
 		free_node(cache_node);
 		return NULL;
@@ -269,15 +271,8 @@ void* doit(void* param){
 		close(fd);
 		return NULL;
 	}
-	printf("before revise:%s\n", serverName);
 	char* newServerName = get_rid_of_http(serverName);
-	printf("after revise %s\n", newServerName);
 	int port = get_port(newServerName);
-	printf("-----------------start-----------------\n");
-	printf("%s\n", newServerName);
-	printf("port = %d\n", port);
-	printf("------------------end----------------\n");
-
 	//collect
 	//read init bytes
 	memset(revised_hdr, 0, sizeof(revised_hdr));
@@ -330,7 +325,6 @@ void* doit(void* param){
 		}
 		else{
 			strcat(revised_hdr, buf);
-			printf("cat %s\n", buf);
 		}
 	}while(strcmp(buf, "\r\n"));
 	if(!has_agent){
@@ -356,7 +350,6 @@ void* doit(void* param){
 	
 	send_request_to_server(fd, newServerName, revised_hdr, content, port, uri, is_static);
 	close(fd);
-	printf("thread ended\n");
 	return NULL;
 }
 
@@ -381,7 +374,7 @@ int get_server_name_and_content(char* fileName, char* serverName, char* content)
 	if(slash_index < 0){
 		if(strlen(fileName) > 0){
 			strcpy(serverName, fileName);
-			content[0] = '0';
+			content[0] = '\0';
 			return 0;
 		}else{
 			fprintf(stderr, "bad url");
