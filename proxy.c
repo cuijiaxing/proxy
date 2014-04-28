@@ -6,6 +6,8 @@
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
 
+static int verbose = 0;
+
 /* You won't lose style points for including these long lines in your code */
 static char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 static char *accept_hdr = "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n";
@@ -59,15 +61,28 @@ int main(int argc, char** argv)
 	listenfd = Open_listenfd(port);
 	while(1){
 		clientlen = sizeof(clientaddr);
-		connfd = Accept(listenfd, (SA*)&clientaddr, (socklen_t*)&clientlen);
+		connfd = accept(listenfd, (SA*)&clientaddr, (socklen_t*)&clientlen);
+		if(connfd < 0){
+			if(verbose){
+				fprintf(stderr, "accept error\n");
+			}
+			continue;
+		}
 		int* param = (int*)malloc(sizeof(int));
 		if(param == NULL){
-			//no enough memory
+			if(verbose){
+				fprintf(stderr, "no memory to start the child process\n");
+			}
 			continue;
 		}
 		*param = connfd;
 		register_handler_chld();
-		Pthread_create(&thread, NULL, doit, (void*)param);
+		//create child thread
+		if(pthread_create(&thread, NULL, doit, (void*)param) != 0){
+			if(verbose){
+				fprintf(stderr, "create child process failed!\n");
+			}
+		}
 		register_handler_prt();
 	}
 	Close(listenfd);
@@ -79,32 +94,30 @@ int sendit(int fd, char* host, char* hdr, char* message){
 	char buffer[MAXLINE];
 	sprintf(buffer, "GET /%s HTTP/1.0\r\n", message);
 	//printf("request: %s", buffer);
-	if(RRio_writen(fd, buffer, strlen(buffer))){
-		return close(fd);
+	if(rio_writen(fd, buffer, strlen(buffer)) < 0){
+		close(fd);
+		return -1;
 	}
-	if(RRio_writen(fd, hdr, strlen(hdr))){
-		return close(fd);
+	if(rio_writen(fd, hdr, strlen(hdr)) < 0){
+		close(fd);
+		return -1;
 	}
-	if(RRio_writen(fd, end, strlen(end))){
-		return close(fd);
+	if(rio_writen(fd, end, strlen(end)) < 0){
+		close(fd);
+		return -1;
 	}
-	//printf("%s", hdr);
-	//printf("send message success\n");
 	return 0;
 }
 
 char* get_rid_of_http(char* hostname){
-	char* head = "http://";
-	if(strlen(hostname) >= 7){
-		for(int i = 0; i < 7; ++i){
-			if(hostname[i] != head[i]){
-				return hostname;
-			}
-		}
+	if(strncmp(hostname, "http://", 7) == 0 || strncmp(hostname, "HTTP://", 7) == 0){
 		return hostname + 7;
+	}else{
+		return hostname;
 	}
-	return hostname;
+
 }
+
 
 
 size_t get_content_length(char* header){
