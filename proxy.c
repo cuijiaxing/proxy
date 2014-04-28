@@ -16,7 +16,6 @@ static char *connection_hdr = "Connection: close\r\n";
 static char *proxy_connection_hdr = "Proxy-connection: close\r\n";
 
 void* doit(void* param);
-void read_requesthdrs(rio_t *rp);
 int parse_uri(char* uri, char* filename, char* cgiargs);
 void serve_static(int fd, char* filename, int filesize);
 void get_filetype(char* filename, char* filetype);
@@ -189,6 +188,7 @@ int RRio_writen(int fd, char* buf, size_t size){
 void* doit(void* param){
 	//int* a = (int*)100;
 	//*a = 100;
+	Pthread_detach(Pthread_self());
 	int fd = *((int*)param);
 	if(param != NULL){
 		free((int*)param);
@@ -196,7 +196,6 @@ void* doit(void* param){
 	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE], revised_hdr[MAXLINE];
 	char filename[MAXLINE], cgiargs[MAXLINE];
 	rio_t rio;
-	Pthread_detach(Pthread_self());
 	Rio_readinitb(&rio, fd);
 	Rio_readlineb(&rio, buf, MAXLINE);
 	sscanf(buf, "%s %s %s", method, uri, version);
@@ -350,20 +349,6 @@ int get_server_name_and_content(char* fileName, char* serverName, char* content)
 }
 
 
-void read_requesthdrs(rio_t *rp){
-	char buf[MAXLINE];
-
-	Rio_readlineb(rp, buf, MAXLINE);
-	//printf("header starts\n");
-	//printf("%s", buf);
-	while(strcmp(buf, "\r\n")){
-		Rio_readlineb(rp, buf, MAXLINE);
-		//printf("%s", buf);
-	}
-	//printf("header ends\n");
-	return;
-}
-
 int get_port(char* server){
 	int port;
 	char* start_ptr = NULL;
@@ -393,19 +378,6 @@ int parse_uri(char* uri, char* filename, char* cgiargs){
 }
 
 
-void get_filetype(char* filename, char* filetype){
-	if(strstr(filename, ".html")){
-		strcpy(filetype, "text/html");
-	}else
-	if(strstr(filename, ".gif")){
-		strcpy(filetype, "image/gif");
-	}else
-	if(strstr(filename, ".jpg")){
-		strcpy(filetype, "image/jped");
-	}else{
-		strcpy(filetype, "text/plain");
-	}
-}
 
 void clienterror(int fd, char* cause, char* errnum, 
 		char* shortmsg, char* longmsg){
