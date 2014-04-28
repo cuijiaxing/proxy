@@ -6,18 +6,9 @@ LNode cache_head = NULL;
 #ifdef CC_DEBUG
 int output_fd = -1;
 #endif
-void init_node(LNode node){
-	node->content = NULL;
-	node->size = 0;
-	node->uri = NULL;
-	node->next = NULL;
-	#ifdef CC_DEBUG
-	output_fd = open("log.txt", O_WRONLY);
-	#endif
-}
 static long count = 0;
-static size_t total_length = 1049000;
-static size_t max_single_length = 102400;
+static size_t total_length = 10240;//1049000;
+static size_t max_single_length = 10240;//102400;
 sem_t q_mutex, v_mutex, r_mutex, time_mutex, revise_time_mutex;
 int read_count = 0;
 
@@ -26,6 +17,24 @@ void cc_log(char* message){
 	write(output_fd, message, strlen(message));
 }
 #endif 
+long get_time(){
+	int temp = 0;
+	P(&time_mutex);
+	++count;
+	temp = count;
+	V(&time_mutex);
+	return temp;
+}
+void init_node(LNode node){
+	node->content = NULL;
+	node->size = 0;
+	node->uri = NULL;
+	node->next = NULL;
+	node->time = get_time();
+	#ifdef CC_DEBUG
+	output_fd = open("log.txt", O_WRONLY);
+	#endif
+}
 void decrease_size(size_t t){
 	total_length -= t;
 }
@@ -33,34 +42,32 @@ void increase_size(size_t t){
 	total_length += t;
 }
 
-long get_time(){
-	P(&time_mutex);
-	++count;
-	V(&time_mutex);
-	return count;
-}
-void init_cache(){
-	//alread cached
-	if(cache_head != NULL){
-		return;
-	}
-	cache_head = (LNode)malloc(sizeof(Node));
-	init_node(cache_head);
+
+void very_beginning(){
 	Sem_init(&q_mutex, 1, 1);
 	Sem_init(&v_mutex, 1, 1);
 	Sem_init(&r_mutex, 1, 1);
 	Sem_init(&time_mutex, 1, 1);
 	Sem_init(&revise_time_mutex, 1, 1);
 }
+void init_cache(){
+	//alread cached
+	if(cache_head != NULL){
+		return;
+	}
+	very_beginning();
+	cache_head = (LNode)malloc(sizeof(Node));
+	init_node(cache_head);
+}
 
 void cache(char* uri, char* content, size_t n){
 	P(&q_mutex);
 	P(&v_mutex);
-	if(strlen(content) <= max_single_length){
-		while(strlen(content) > get_remaining_size()){
+	if(n <= max_single_length){
+		while(n > get_remaining_size()){
 			evict();
 		}
-		if(strlen(content) <= get_remaining_size()){
+		if(n <= get_remaining_size()){
 			cache_it(uri, content, n);
 		}
 	}
@@ -97,15 +104,16 @@ void insert_node(LNode node){
 void cache_it(char* uri, char* content, size_t n){
 	LNode node = (LNode)malloc(sizeof(Node));
 	init_node(node);
-	node->uri = (char*)malloc(sizeof(char) * strlen(uri));
+	node->uri = (char*)malloc(sizeof(char) * (strlen(uri) + 1));
 	node->content = (char*)malloc(sizeof(char) * n);
 	node->size = n;
 	strcpy(node->uri, uri);
+	size_t test_size = strlen(node->uri);
 	strncpy(node->content, content, n);
 	insert_node(node);
 	decrease_size(n);
 	printf("*********************cached******************\n");
-	printf("%s, size=%zd\n", uri, n);
+	printf("%s, size=%zd, remaining size=%zd\n", uri, n, get_remaining_size());
 	printf("*********************end***********************\n");
 }
 
@@ -118,7 +126,9 @@ LNode copy_node(LNode node){
 	init_node(result_node);
 	result_node->time = node->time;
 	result_node->content = (char*)malloc(sizeof(char) * node->size);
-	result_node->uri = (char*)malloc(sizeof(node->uri));
+	result_node->uri = (char*)malloc((strlen(node->uri) + 1) * sizeof(char));
+	strcpy(result_node->uri, node->uri);
+	strncpy(result_node->content, node->content, node->size);
 	return result_node;
 }
 
@@ -169,12 +179,24 @@ void evict(){
 		return;
 	}
 	current_prev->next = result_node->next;
-	increase_size(strlen(result_node->content));
+	increase_size(result_node->size);
 	free_node(result_node);
 }
 
 void free_node(LNode node){
-	free(node->content);
-	free(node->uri);
+	if(node == NULL){
+		return ;
+	}
+	printf("&*(*&*&*&(*&*&evicted\n");
+	printf("%s, size=%zd\n, remaining size = %zd\n", node->uri, node->size, get_remaining_size());
+	if(node->content != NULL){
+		free(node->content);
+		node->content = NULL;
+	}
+	if(node->uri != NULL){
+		free(node->uri);
+		node->uri = NULL;
+	}
 	free(node);
+	printf("free successfully\n");
 }

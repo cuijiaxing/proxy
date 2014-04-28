@@ -176,6 +176,7 @@ int RRio_writen(int fd, char* buf, size_t size){
 
 void* doit(void* param){
 	int fd = *((int*)param);
+	printf("free port\n");
 	free((int*)param);
 	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE], revised_hdr[MAXLINE];
 	char filename[MAXLINE], cgiargs[MAXLINE];
