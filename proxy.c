@@ -35,11 +35,13 @@ void clienterror(int fd, char* cause, char* errnum,
 int get_server_name_and_content(char* fileName, char* serverName, char* content);
 
 void cc_log(char* message){
+	/*
 	FILE* file = fopen("log.txt", "a");
 	fputs("curl -v --proxy bambooshark.ics.cs.cmu.edu:46854 ", file); 
 	fputs(message, file);
 	fputs("\r\n", file);
 	fclose(file);
+	*/
 }
 
 int main(int argc, char** argv)
@@ -91,25 +93,14 @@ int main(int argc, char** argv)
 char request[MAXLINE];
 
 int sendit(int fd, char* host, char* hdr, char* message){
-	char* end  = "\r\n";
 	char buffer[MAXLINE];
+	size_t n;
 	sprintf(buffer, "GET %s HTTP/1.0\r\n", message);
+	strcat(buffer, hdr);
 	//printf("request: %s", buffer);
-	if(rio_writen(fd, buffer, strlen(buffer)) < 0){
+	if((n = rio_writen(fd, buffer, strlen(buffer))) < 0){
 		if(verbose){
 			fprintf(stderr, "send get request failed\n");
-		}
-		return -1;
-	}
-	if(rio_writen(fd, hdr, strlen(hdr)) < 0){
-		if(verbose){
-			fprintf(stderr, "send hdr failed\n");
-		}
-		return -1;
-	}
-	if(rio_writen(fd, end, strlen(end)) < 0){
-		if(verbose){
-			fprintf(stderr, "send tail failed\n");
 		}
 		return -1;
 	}
@@ -143,8 +134,8 @@ int send_request_to_server(int client_fd, char* server, char* hdr, char* message
 	if(fd < 0){
 		if(verbose){
 			printf("connect to server failed\n");
-			clienterror(client_fd, "GET", "404", "Server not Found\n", 
-				"I cannot find it!\n");
+			clienterror(client_fd, "GET", "404", "Server not Found", 
+				"I cannot find it!");
 		}
 		return -1;
 	}
@@ -346,7 +337,7 @@ void* doit(void* param){
 		strcat(revised_hdr, serverName);
 		strcat(revised_hdr, "\r\n");
 	}
-	
+	strcat(revised_hdr, "\r\n");
 	send_request_to_server(fd, serverName, revised_hdr, content, port, uri, is_static);
 	close(fd);
 	return NULL;
