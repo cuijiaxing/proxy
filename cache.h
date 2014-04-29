@@ -1,3 +1,5 @@
+#ifndef __CACHE_H__
+#define __CACHE_H__
 #include "csapp.h"
 #include<time.h>
 
@@ -23,4 +25,4 @@ void insert_node(LNode node);
 void decrease_size(size_t t);
 void increase_size(size_t t);
 size_t get_remaining_size();
-
+#endif

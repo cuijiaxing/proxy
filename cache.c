@@ -1,60 +1,67 @@
+/*
+ *This is the cache for proxy
+ *I use a linked list to store the cached values
+ *I will inserted the newly cached web object at the 
+ *beginning of the list
+ *I use LRU to evict the node according to their time stamp
+ *
+ * */
 #include "cache.h"
-#define CC_DEBUG
 
 
 LNode cache_head = NULL;
-#ifdef CC_DEBUG
-#endif
 static long count = 0;
 static size_t total_length = 1049000;
 static size_t max_single_length = 102400;
-sem_t q_mutex, v_mutex, r_mutex, time_mutex, revise_time_mutex;
+pthread_mutex_t q_mutex, v_mutex, r_mutex, time_mutex, revise_time_mutex;
 int read_count = 0;
 
-#ifdef CC_DEBUG
-void cc_log(char* message){
-	fprintf(stderr, message, strlen(message));
-}
-#endif 
+
+//get current time
 long get_time(){
 	int temp = 0;
-	P(&time_mutex);
+	pthread_mutex_lock(&time_mutex);
 	++count;
 	temp = count;
-	V(&time_mutex);
+	pthread_mutex_unlock(&time_mutex);
 	return temp;
 }
+
+//init a node to fault values
 void init_node(LNode node){
 	node->content = NULL;
 	node->size = 0;
 	node->uri = NULL;
 	node->next = NULL;
 	node->time = get_time();
-	#ifdef CC_DEBUG
-	//output_fd = open("log.txt", O_WRONLY);
-	#endif
 }
+
+//decrease the size of available memory
 void decrease_size(size_t t){
 	total_length -= t;
 }
+
+//increase the size of available memory
 void increase_size(size_t t){
 	total_length += t;
 }
 
-
-void very_beginning(){
-	Sem_init(&q_mutex, 1, 1);
-	Sem_init(&v_mutex, 1, 1);
-	Sem_init(&r_mutex, 1, 1);
-	Sem_init(&time_mutex, 1, 1);
-	Sem_init(&revise_time_mutex, 1, 1);
+//init mutex at the very beginning
+void very_beginning_init_mutex(){
+	pthread_mutex_init(&q_mutex, NULL);
+	pthread_mutex_init(&v_mutex, NULL); 
+	pthread_mutex_init(&r_mutex, NULL);
+	pthread_mutex_init(&time_mutex, NULL);
+	pthread_mutex_init(&revise_time_mutex, NULL);
 }
+
+//init the cache
 int init_cache(){
-	//alread cached
+	//alread initialized
 	if(cache_head != NULL){
 		return 0;
 	}
-	very_beginning();
+	very_beginning_init_mutex();
 	cache_head = (LNode)malloc(sizeof(Node));
 	if(cache_head == NULL){
 		return -1;
@@ -63,9 +70,15 @@ int init_cache(){
 	return 0;
 }
 
+
+//cache an object
+//no return value
 void cache(char* uri, char* content, size_t n){
-	P(&q_mutex);
-	P(&v_mutex);
+	if(n <= 0){
+		return;
+	}
+	pthread_mutex_lock(&q_mutex);
+	pthread_mutex_lock(&v_mutex);
 	if(n <= max_single_length){
 		while(n > get_remaining_size()){
 			evict();
@@ -74,43 +87,44 @@ void cache(char* uri, char* content, size_t n){
 			cache_it(uri, content, n);
 		}
 	}
-	V(&v_mutex);
-	V(&q_mutex);
+	pthread_mutex_unlock(&v_mutex);
+	pthread_mutex_unlock(&q_mutex);
 	return;
 }
 
+//try to find if a uri is in the cache
 LNode  visit(char* uri){
 	LNode result = NULL;
-	P(&q_mutex);
+	pthread_mutex_lock(&q_mutex);
 	if(read_count == 0){
-		P(&v_mutex);
+		pthread_mutex_lock(&v_mutex);
 	}
 	++read_count;
-	V(&q_mutex);
+	pthread_mutex_unlock(&q_mutex);
 	result = find_cache(uri);
-	P(&r_mutex);
+	pthread_mutex_lock(&r_mutex);
 	--read_count;
 	if(read_count == 0){
-		V(&v_mutex);
+		pthread_mutex_unlock(&v_mutex);
 	}
-	V(&r_mutex);
+	pthread_mutex_unlock(&r_mutex);
 	return result;
 }
 
-
+//insert a node into the cache list
 void insert_node(LNode node){
 	node->next = cache_head->next;
 	cache_head->next = node;
 }
 
-
+//cache a web object
 int cache_it(char* uri, char* content, size_t n){
 	LNode node = (LNode)malloc(sizeof(Node));
 	if(node == NULL){
 		return -1;
 	}
 	init_node(node);
-	node->uri = (char*)malloc(sizeof(char) * (strlen(uri) + 1));
+	node->uri = (char*)malloc(sizeof(char) * (strlen(uri) + 1));//padding 1 for '\0'
 	if(node->uri == NULL){
 		return -1;
 	}
@@ -127,9 +141,6 @@ int cache_it(char* uri, char* content, size_t n){
 	memcpy(node->content, content, n);
 	insert_node(node);
 	decrease_size(n);
-	printf("*********************cached******************\n");
-	printf("%s, size=%zd, remaining size=%zd\n", uri, n, get_remaining_size());
-	printf("*********************end***********************\n");
 	return 0;
 }
 
@@ -158,34 +169,38 @@ LNode copy_node(LNode node){
 	return result_node;
 }
 
+
+//find if the uri is cache
+//return NULL if not found
 LNode find_cache(char* uri){
 	LNode temp_head = cache_head->next;
 	LNode result_node = NULL;
-	//printf("******************look begin*************\n");
 	while(temp_head){
-		//printf("%s\n", temp_head->uri);
 		if(!strcmp(temp_head->uri, uri)){
 			break;
 		}
 		temp_head = temp_head->next;
 	}
-	//printf("******************look end*************\n");
 	if(temp_head){
-		//race condition
-		P(&revise_time_mutex);
+		//try to avoid race condition
+		pthread_mutex_lock(&revise_time_mutex);
 		temp_head->time = get_time();
 		result_node = copy_node(temp_head);
-		V(&revise_time_mutex);
+		pthread_mutex_unlock(&revise_time_mutex);
 		return result_node;
 	}
 	return NULL;
 }
 
 
+
+//get available cache size
 size_t get_remaining_size(){
 	return total_length;
 }
 
+
+//evict node from the cache
 void evict(){
 	LNode prev_head = cache_head;
 	LNode current_node = cache_head->next;
@@ -209,6 +224,8 @@ void evict(){
 	free_node(result_node);
 }
 
+
+//release memory
 void free_node(LNode node){
 	if(node == NULL){
 		return ;
@@ -222,5 +239,4 @@ void free_node(LNode node){
 		node->uri = NULL;
 	}
 	free(node);
-	printf("free successfully\n");
 }
