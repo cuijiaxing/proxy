@@ -6,6 +6,9 @@
  * send request to server and get response
  * if the size of the object is appropriate,
  * then I will cathe it.
+ * I will ignore to store the web object like
+ * the return status is not 200
+ * and the header contains no-cache
  *
  * */
 
@@ -32,7 +35,8 @@ void serve_static(int fd, char* filename, int filesize);
 void get_filetype(char* filename, char* filetype);
 void clienterror(int fd, char* cause, char* errnum, 
 		char* shortmsg, char* longmsg);
-int get_server_name_and_content(char* fileName, char* serverName, char* content);
+int get_server_name_and_content(char* fileName,
+	 char* server_name, char* content);
 
 void cc_log(char* message){
 	/*
@@ -127,7 +131,9 @@ void print_errno(int err){
 }
 
 
-int send_request_to_server(int client_fd, char* server, char* hdr, char* message, int port, char* uri, int is_static){
+int send_request_to_server(int client_fd,
+	 char* server, char* hdr, char* message,
+	 	 int port, char* uri, int is_static){
 	rio_t rio;
 	//we don't want to use Open_clientfd because it will terminate the program
 	int fd = open_clientfd(server, port);
@@ -212,7 +218,7 @@ int send_request_to_server(int client_fd, char* server, char* hdr, char* message
 void* doit(void* param){
 	//int* a = (int*)100;
 	//*a = 100;
-	Pthread_detach(Pthread_self());
+	pthread_detach(pthread_self());
 	if(param == NULL){
 		return NULL;
 	}
@@ -220,7 +226,8 @@ void* doit(void* param){
 	if(param != NULL){
 		free(param);
 	}
-	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE], revised_hdr[MAXLINE];
+	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE],
+					 version[MAXLINE], revised_hdr[MAXLINE];
 	char filename[MAXLINE];
 	rio_t rio;
 	Rio_readinitb(&rio, fd);
@@ -258,10 +265,11 @@ void* doit(void* param){
 		printf("end send from cache\n");
 		return NULL;
 	}
-	char serverName[MAXLINE];
-	char content [MAXLINE];
+	char server_name[MAXLINE];
+	char content[MAXLINE];
 	int port = 80;
-	if((port = get_server_name_and_content(filename, serverName, content)) < 0){
+	if((port = get_server_name_and_content(filename,
+							 			server_name, content)) < 0){
 		if(verbose){
 			fprintf(stderr, "get server name failed\n");
 		}
@@ -271,15 +279,10 @@ void* doit(void* param){
 	//collect
 	//read init bytes
 	memset(revised_hdr, 0, sizeof(revised_hdr));
-	int has_agent = 0, has_accept = 0, has_encoding = 0, has_connection = 0, has_proxy = 0, has_host = 0;
-	do{
-		if(rio_readlineb(&rio, buf, MAXLINE) < 0){
-			if(verbose){
-				fprintf(stderr, "read request hdr failed\n");
-			}
-			close(fd);
-			return NULL;
-		}
+	int n;
+	int has_agent = 0, has_accept = 0, has_encoding = 0,
+			 has_connection = 0, has_proxy = 0, has_host = 0;
+	while((n = rio_readlineb(&rio, buf, MAXLINE)) > 0 && strcmp(buf, "\r\n")){
 		if(strstr(buf, "User-Agent") != NULL){
 			if(!has_agent){
 				strcat(revised_hdr, user_agent_hdr);
@@ -316,7 +319,14 @@ void* doit(void* param){
 		else{
 			strcat(revised_hdr, buf);
 		}
-	}while(strcmp(buf, "\r\n"));
+	}
+	if(n < 0){
+		if(verbose){
+				fprintf(stderr, "read request hdr failed\n");
+			}
+			close(fd);
+			return NULL;
+	}
 	if(!has_agent){
 		strcat(revised_hdr, user_agent_hdr);
 	}
@@ -334,33 +344,35 @@ void* doit(void* param){
 	}
 	if(!has_host){
 		strcat(revised_hdr, "HOST: ");
-		strcat(revised_hdr, serverName);
+		strcat(revised_hdr, server_name);
 		strcat(revised_hdr, "\r\n");
 	}
 	strcat(revised_hdr, "\r\n");
-	send_request_to_server(fd, serverName, revised_hdr, content, port, uri, is_static);
+	send_request_to_server(fd, server_name, 
+					revised_hdr, content, port, uri, is_static);
 	close(fd);
 	return NULL;
 }
 
 
-int get_server_name_and_content(char* fileName, char* serverName, char* content){
+int get_server_name_and_content(char* fileName, 
+						char* server_name, char* content){
 	int port = 80;
-	sscanf(fileName, "%*[^:]://%[^/]%s", serverName, content);
-	if(strlen(serverName) == 0){
-		sscanf(fileName, "%[^/]%s", serverName, content);
+	sscanf(fileName, "%*[^:]://%[^/]%s", server_name, content);
+	if(strlen(server_name) == 0){
+		sscanf(fileName, "%[^/]%s", server_name, content);
 	}
 	if(strlen(content) == 0){
 		strcpy(content, "/");
 	}
-	if(strstr(serverName, ":")){
+	if(strstr(server_name, ":")){
 		char buf[MAXLINE];
-		strcpy(buf, serverName);
-		sscanf(buf, "%[^:]:%d", serverName, &port);
+		strcpy(buf, server_name);
+		sscanf(buf, "%[^:]:%d", server_name, &port);
 	}
 	if(verbose){
 		printf("file name = %s\n", fileName);
-		printf("server name = %s\n", serverName);
+		printf("server name = %s\n", server_name);
 		printf("content = %s\n", content);
 		printf("port = %d\n", port);
 	}
