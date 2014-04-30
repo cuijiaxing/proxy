@@ -1,3 +1,8 @@
+/**
+*This is the header file for cache
+*andrew id: jiaxingc
+*author: Jiaxing Cui
+***/
 #ifndef __CACHE_H__
 #define __CACHE_H__
 #include "csapp.h"

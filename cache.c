@@ -4,7 +4,8 @@
  *I will inserted the newly cached web object at the 
  *beginning of the list
  *I use LRU to evict the node according to their time stamp
- *
+ *andrew id: jiaxingc
+ *author: Jiaxing Cui
  * */
 #include "cache.h"
 
@@ -71,8 +72,7 @@ int init_cache(){
 }
 
 
-//cache an object
-//no return value
+//cache an object with lock
 void cache(char* uri, char* content, size_t n){
 	if(n <= 0){
 		return;
@@ -124,7 +124,8 @@ int cache_it(char* uri, char* content, size_t n){
 		return -1;
 	}
 	init_node(node);
-	node->uri = (char*)malloc(sizeof(char) * (strlen(uri) + 1));//padding 1 for '\0'
+	//padding 1 for '\0'
+	node->uri = (char*)malloc(sizeof(char) * (strlen(uri) + 1));
 	if(node->uri == NULL){
 		return -1;
 	}

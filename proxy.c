@@ -9,7 +9,8 @@
  * I will ignore to store the web object like
  * the return status is not 200
  * and the header contains no-cache
- *
+ *andrew id: jiaxingc
+ *author: Jiaxing Cui
  * */
 
 #include "cache.h"
@@ -19,7 +20,7 @@
 #define MAX_OBJECT_SIZE 102400
 
 
-static int verbose = 1;
+static int verbose = 0;
 
 /* You won't lose style points for including these long lines in your code */
 static char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
@@ -37,16 +38,6 @@ void clienterror(int fd, char* cause, char* errnum,
 		char* shortmsg, char* longmsg);
 int get_server_name_and_content(char* fileName,
 	 char* server_name, char* content);
-
-void cc_log(char* message){
-	/*
-	FILE* file = fopen("log.txt", "a");
-	fputs("curl -v --proxy bambooshark.ics.cs.cmu.edu:46854 ", file); 
-	fputs(message, file);
-	fputs("\r\n", file);
-	fclose(file);
-	*/
-}
 
 int main(int argc, char** argv)
 {
@@ -70,7 +61,7 @@ int main(int argc, char** argv)
 		connfd = accept(listenfd, (SA*)&clientaddr, (socklen_t*)&clientlen);
 		if(connfd < 0){
 			if(verbose){
-				fprintf(stderr, "accept error\n");
+				printf("accept error\n");
 				print_errno(errno);
 			}
 			continue;
@@ -78,7 +69,7 @@ int main(int argc, char** argv)
 		int* param = (int*)malloc(sizeof(int));
 		if(param == NULL){
 			if(verbose){
-				fprintf(stderr, "no memory to start the child process\n");
+				printf("no memory to start the child process\n");
 			}
 			close(connfd);
 			continue;
@@ -87,7 +78,7 @@ int main(int argc, char** argv)
 		//create child thread
 		if(pthread_create(&thread, NULL, doit, (void*)param) != 0){
 			if(verbose){
-				fprintf(stderr, "create child process failed!\n");
+				printf("create child process failed!\n");
 			}
 			close(connfd);
 		}
@@ -104,7 +95,7 @@ int sendit(int fd, char* host, char* hdr, char* message){
 	//printf("request: %s", buffer);
 	if((n = rio_writen(fd, buffer, strlen(buffer))) < 0){
 		if(verbose){
-			fprintf(stderr, "send get request failed\n");
+			printf("send get request failed\n");
 		}
 		return -1;
 	}
@@ -201,15 +192,9 @@ int send_request_to_server(int client_fd,
 	if(response_size <= MAX_OBJECT_SIZE &&
 		is_static && should_cache
 		&& response_size > 0){
-		//we don't care about if an object is successfully cached
+		//cache the web object 
 		cache(uri, temp_cache, response_size);
-		printf("cached:%s\n", uri);
-		printf("size=%zd\n", response_size);
 	}
-	printf("******************************\n");
-	printf("%s\n", uri);
-	printf("total size = %zd\n", response_size);
-	printf("******************************\n");
 	close(fd);
 	return 0;
 }
@@ -238,14 +223,12 @@ void* doit(void* param){
 		printf("**************end requested uri**********\n");
 	}
 	sscanf(buf, "%s %s %s", method, uri, version);
-	cc_log(uri);
 	if(strcasecmp(method, "GET")){
 		clienterror(fd, method, "501", "Not Implemented", 
 			"Tiny does not implement this method");
 		close(fd);
 		return NULL;
 	}
-	printf("%s\n", uri);
 	int is_static = parse_uri(uri, filename);
 	LNode cache_node = NULL;
 	if(is_static){
@@ -253,16 +236,13 @@ void* doit(void* param){
 	}
 	//find cached object
 	if(cache_node != NULL){
-		printf("send from cache, size = %zd\n", cache_node->size);
 		if(rio_writen(fd, cache_node->content, cache_node->size) < 0){
 			free_node(cache_node);
 			close(fd);
 			return NULL;
 		}
 		close(fd);
-		printf("%s\n", cache_node->uri);
 		free_node(cache_node);
-		printf("end send from cache\n");
 		return NULL;
 	}
 	char server_name[MAXLINE];
@@ -271,7 +251,7 @@ void* doit(void* param){
 	if((port = get_server_name_and_content(filename,
 							 			server_name, content)) < 0){
 		if(verbose){
-			fprintf(stderr, "get server name failed\n");
+			printf("get server name failed\n");
 		}
 		close(fd);
 		return NULL;
@@ -322,7 +302,7 @@ void* doit(void* param){
 	}
 	if(n < 0){
 		if(verbose){
-				fprintf(stderr, "read request hdr failed\n");
+				printf("read request hdr failed\n");
 			}
 			close(fd);
 			return NULL;
@@ -379,12 +359,10 @@ int get_server_name_and_content(char* fileName,
 	return port;
 }
 
+//check if the uri is static or dynamic and 
 int parse_uri(char* uri, char* filename){
 	filename[0] = '\0';
 	strcat(filename, uri);
-	if(uri[strlen(uri) - 1] == '/'){
-		strcat(filename, "");
-	}
 	if(strstr(filename, "?")){
 		return 0;
 	}else{
