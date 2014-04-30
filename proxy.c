@@ -15,9 +15,6 @@
 
 #include "cache.h"
 
-/* Recommended max cache and object sizes */
-#define MAX_CACHE_SIZE 1049000
-#define MAX_OBJECT_SIZE 102400
 
 
 static int verbose = 0;
@@ -28,20 +25,27 @@ static char *accept_hdr = "Accept: text/html,application/xhtml+xml,application/x
 static char *accept_encoding_hdr = "Accept-Encoding: gzip, deflate\r\n";
 static char *connection_hdr = "Connection: close\r\n";
 static char *proxy_connection_hdr = "Proxy-connection: close\r\n";
+char request[MAXLINE];
 
 void* doit(void* param);
 void print_errno(int err);
 int parse_uri(char* uri, char* filename);
-void serve_static(int fd, char* filename, int filesize);
 void get_filetype(char* filename, char* filetype);
 void clienterror(int fd, char* cause, char* errnum, 
 		char* shortmsg, char* longmsg);
 int get_server_name_and_content(char* fileName,
 	 char* server_name, char* content);
+void* doit(void* param);
+int send_request_to_server(int client_fd,
+	 char* server, char* hdr, char* message,
+	 	 int port, char* uri, int is_static);
 
+int sendit(int fd, char* host, char* hdr, char* message);
+void handler(int sig);
 int main(int argc, char** argv)
 {
 	signal(SIGPIPE, SIG_IGN);
+	signal(SIGSEGV, handler);
 	int connfd, port, clientlen, listenfd;
 	pthread_t thread;
 	struct sockaddr_in clientaddr;
@@ -58,7 +62,8 @@ int main(int argc, char** argv)
 	listenfd = Open_listenfd(port);
 	while(1){
 		clientlen = sizeof(clientaddr);
-		connfd = accept(listenfd, (SA*)&clientaddr, (socklen_t*)&clientlen);
+		connfd = accept(listenfd, (SA*)&clientaddr, 
+					(socklen_t*)&clientlen);
 		if(connfd < 0){
 			if(verbose){
 				printf("accept error\n");
@@ -69,7 +74,8 @@ int main(int argc, char** argv)
 		int* param = (int*)malloc(sizeof(int));
 		if(param == NULL){
 			if(verbose){
-				printf("no memory to start the child process\n");
+				printf("no memory to start the\
+						child process\n");
 			}
 			close(connfd);
 			continue;
@@ -85,8 +91,11 @@ int main(int argc, char** argv)
 	}
 	Close(listenfd);
 }
-char request[MAXLINE];
 
+
+//send request to server
+//return 0 if success
+//return -1 if fail
 int sendit(int fd, char* host, char* hdr, char* message){
 	char buffer[MAXLINE];
 	size_t n;
@@ -101,7 +110,7 @@ int sendit(int fd, char* host, char* hdr, char* message){
 	}
 	return 0;
 }
-
+//print specific error info
 void print_errno(int err){
 	switch(err){
 		case ENOBUFS:
@@ -121,18 +130,20 @@ void print_errno(int err){
 	return;
 }
 
-
+//facade for sending request to server
+//return -1 if fail
+//return 0 if success
 int send_request_to_server(int client_fd,
 	 char* server, char* hdr, char* message,
 	 	 int port, char* uri, int is_static){
 	rio_t rio;
-	//we don't want to use Open_clientfd because it will terminate the program
+	//we don't want to use Open_clientfd because it terminates the program
 	int fd = open_clientfd(server, port);
 	if(fd < 0){
 		if(verbose){
 			printf("connect to server failed\n");
-			clienterror(client_fd, "GET", "404", "Server not Found", 
-				"I cannot find it!");
+			clienterror(client_fd, "GET", "404", 
+				"Server not Found","I cannot find it!");
 		}
 		return -1;
 	}
@@ -143,7 +154,7 @@ int send_request_to_server(int client_fd,
 		close(fd);
 		return -1;
 	}
-	Rio_readinitb(&rio, fd);
+	rio_readinitb(&rio, fd);
 	char buffer[MAXLINE];
 	size_t n;
 	char temp_cache[MAX_OBJECT_SIZE];	
@@ -176,7 +187,7 @@ int send_request_to_server(int client_fd,
 	}
 	while((n = rio_readnb(&rio, buffer, MAXLINE)) > 0){
 		response_size += n;
-		if(should_cache && response_size < MAX_OBJECT_SIZE){
+		if(should_cache && response_size <= MAX_OBJECT_SIZE){
 			memcpy(increase_temp_cache, buffer, n);
 			increase_temp_cache += n;
 		}
@@ -199,10 +210,8 @@ int send_request_to_server(int client_fd,
 	return 0;
 }
 
-
+//the main routine for handling rquest
 void* doit(void* param){
-	//int* a = (int*)100;
-	//*a = 100;
 	pthread_detach(pthread_self());
 	if(param == NULL){
 		return NULL;
@@ -212,11 +221,16 @@ void* doit(void* param){
 		free(param);
 	}
 	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE],
-					 version[MAXLINE], revised_hdr[MAXLINE];
+			 version[MAXLINE], revised_hdr[MAXLINE];
 	char filename[MAXLINE];
 	rio_t rio;
-	Rio_readinitb(&rio, fd);
-	Rio_readlineb(&rio, buf, MAXLINE);
+	rio_readinitb(&rio, fd);
+	if(rio_readlineb(&rio, buf, MAXLINE) < 0){
+		if(verbose){
+			printf("read first line failed\n");
+		}
+		return NULL;
+	}
 	if(verbose){
 		printf("************requested uri***************\n");
 		printf("%s\n", buf);
@@ -236,7 +250,8 @@ void* doit(void* param){
 	}
 	//find cached object
 	if(cache_node != NULL){
-		if(rio_writen(fd, cache_node->content, cache_node->size) < 0){
+		if(rio_writen(fd, cache_node->content, 
+					cache_node->size) < 0){
 			free_node(cache_node);
 			close(fd);
 			return NULL;
@@ -249,7 +264,7 @@ void* doit(void* param){
 	char content[MAXLINE];
 	int port = 80;
 	if((port = get_server_name_and_content(filename,
-							 			server_name, content)) < 0){
+			 	server_name, content)) < 0){
 		if(verbose){
 			printf("get server name failed\n");
 		}
@@ -262,7 +277,8 @@ void* doit(void* param){
 	int n;
 	int has_agent = 0, has_accept = 0, has_encoding = 0,
 			 has_connection = 0, has_proxy = 0, has_host = 0;
-	while((n = rio_readlineb(&rio, buf, MAXLINE)) > 0 && strcmp(buf, "\r\n")){
+	while((n = rio_readlineb(&rio, buf, MAXLINE)) > 0 
+				&& strcmp(buf, "\r\n")){
 		if(strstr(buf, "User-Agent") != NULL){
 			if(!has_agent){
 				strcat(revised_hdr, user_agent_hdr);
@@ -329,14 +345,14 @@ void* doit(void* param){
 	}
 	strcat(revised_hdr, "\r\n");
 	send_request_to_server(fd, server_name, 
-					revised_hdr, content, port, uri, is_static);
+				revised_hdr, content, port, uri, is_static);
 	close(fd);
 	return NULL;
 }
 
-
+//parse server name and content from string
 int get_server_name_and_content(char* fileName, 
-						char* server_name, char* content){
+				char* server_name, char* content){
 	int port = 80;
 	sscanf(fileName, "%*[^:]://%[^/]%s", server_name, content);
 	if(strlen(server_name) == 0){
@@ -370,8 +386,11 @@ int parse_uri(char* uri, char* filename){
 	}
 }
 
+void handler(int sig){
+	printf("sig segv:%d\n", errno);
+}
 
-
+//ooutput client error
 void clienterror(int fd, char* cause, char* errnum, 
 		char* shortmsg, char* longmsg){
 	char buf[MAXLINE], body[MAXBUF];

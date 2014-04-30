@@ -6,7 +6,9 @@
 #ifndef __CACHE_H__
 #define __CACHE_H__
 #include "csapp.h"
-#include<time.h>
+/* Recommended max cache and object sizes */
+#define MAX_CACHE_SIZE 1049000
+#define MAX_OBJECT_SIZE 102400
 
 typedef struct node{
 	long time;

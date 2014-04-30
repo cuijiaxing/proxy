@@ -12,8 +12,8 @@
 
 LNode cache_head = NULL;
 static long count = 0;
-static size_t total_length = 1049000;
-static size_t max_single_length = 102400;
+static size_t total_length = MAX_CACHE_SIZE;
+static size_t max_single_length = MAX_OBJECT_SIZE;
 pthread_mutex_t q_mutex, v_mutex, r_mutex, time_mutex, revise_time_mutex;
 int read_count = 0;
 
@@ -49,14 +49,21 @@ void increase_size(size_t t){
 
 //init mutex at the very beginning
 void very_beginning_init_mutex(){
+	//waiting queue 
 	pthread_mutex_init(&q_mutex, NULL);
-	pthread_mutex_init(&v_mutex, NULL); 
+	//writer has to wait on this
+	pthread_mutex_init(&v_mutex, NULL);
+	//update read count mutex
 	pthread_mutex_init(&r_mutex, NULL);
+	//update time
 	pthread_mutex_init(&time_mutex, NULL);
+	//revise time
 	pthread_mutex_init(&revise_time_mutex, NULL);
 }
 
 //init the cache
+//return 0 if success
+//return -1 if failure
 int init_cache(){
 	//alread initialized
 	if(cache_head != NULL){
@@ -93,6 +100,7 @@ void cache(char* uri, char* content, size_t n){
 }
 
 //try to find if a uri is in the cache
+//return NULL if not found
 LNode  visit(char* uri){
 	LNode result = NULL;
 	pthread_mutex_lock(&q_mutex);
@@ -101,6 +109,7 @@ LNode  visit(char* uri){
 	}
 	++read_count;
 	pthread_mutex_unlock(&q_mutex);
+	//parallel find 
 	result = find_cache(uri);
 	pthread_mutex_lock(&r_mutex);
 	--read_count;
@@ -118,6 +127,8 @@ void insert_node(LNode node){
 }
 
 //cache a web object
+//return negavive number on failuer
+//retur 0 if success
 int cache_it(char* uri, char* content, size_t n){
 	LNode node = (LNode)malloc(sizeof(Node));
 	if(node == NULL){
@@ -149,6 +160,7 @@ int cache_it(char* uri, char* content, size_t n){
 //to avoid race condition such as when 
 //it is returned, it is evicted before the 
 //server access it
+//return NULL on failure
 LNode copy_node(LNode node){
 	LNode result_node = (LNode)malloc(sizeof(Node));
 	if(result_node == NULL){
@@ -161,7 +173,8 @@ LNode copy_node(LNode node){
 	if(result_node->content == NULL){
 		return NULL;
 	}
-	result_node->uri = (char*)malloc((strlen(node->uri) + 1) * sizeof(char));
+	result_node->uri = (char*)malloc((strlen(node->uri) + 1) 
+						* sizeof(char));
 	if(result_node->uri == NULL){
 		return NULL;
 	}
